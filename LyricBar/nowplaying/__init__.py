@@ -1,0 +1,2 @@
+from LyricBar.nowplaying.nowplayingspicetify import NowPlayingSpicetify
+from LyricBar.nowplaying.nowplayingsystem import NowPlayingSystem

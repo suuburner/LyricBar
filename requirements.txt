@@ -1,0 +1,17 @@
+syncedlyrics
+pylrc
+PyQt5
+websocket_server
+vosk
+pyaudio
+numpy
+pyyaml
+syrics
+PyQt5-Frameless-Window
+winrt-Windows.Media.Control
+winrt-Windows.Foundation
+winrt-Windows.Foundation.Collections
+regex
+Pillow
+mss
+
