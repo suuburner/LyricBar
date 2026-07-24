@@ -1,7 +1,7 @@
 import logging
 import sys
 import time
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication, pyqtSignal, QMutex, QSettings, QEventLoop
+from PyQt5.QtCore import Qt, QTimer, QCoreApplication, pyqtSignal, QMutex, QSettings
 from PyQt5.QtGui import QBitmap, QCursor, QIcon, QPainter, QPainterPath, QRegion
 from PyQt5.QtWidgets import (
     QApplication,
@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 
 # WindowsWindowEffect import removed - was causing black background with setAeroEffect
 
-from LyricBar.themes import get_style, load_themes
+from LyricBar.themes import MINIMAL_THEME_NAMES, get_style, load_themes
 from LyricBar.ui.components.lyriclabel import LyricLabel
 from LyricBar.ui.components.toasttag import ToastTag
 from LyricBar.globalvariables import PLAYING_INFO_PROVIDER, TAKSBAR_HEIGHT, LEFTOUT_WIDTH, SPICETIFY_PORT, resource_path
@@ -117,7 +117,8 @@ class LyricsDisplay(QWidget):
 
         
         self.windowConfig()
-        self.corner_radius = 15
+        self.corner_radius = TAKSBAR_HEIGHT // 2
+        self.setFixedHeight(TAKSBAR_HEIGHT)
         # Enable rounded window masking so no rectangular edge appears outside the bar.
         self.use_masked_corners = True
         
@@ -131,28 +132,7 @@ class LyricsDisplay(QWidget):
         
         # Add minimize button (collapses to small icon)
         self.minimize_button = QPushButton("−", self)
-        self.minimize_button.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255, 255, 255, 100),
-                    stop:1 rgba(200, 200, 200, 120));
-                color: rgba(255, 255, 255, 200);
-                border: 1px solid rgba(255, 255, 255, 80);
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: bold;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(255, 255, 255, 140),
-                    stop:1 rgba(220, 220, 220, 160));
-                border: 1px solid rgba(255, 255, 255, 120);
-            }
-            QPushButton:pressed {
-                background: rgba(180, 180, 180, 140);
-            }
-        """)
+        self.minimize_button.setStyleSheet("QPushButton { background: transparent; color: transparent; border: 0; padding: 0; }")
         self.minimize_button.setFixedSize(18, 18)
         self.minimize_button.clicked.connect(self.minimizeToIcon)
         self.minimize_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -208,8 +188,6 @@ class LyricsDisplay(QWidget):
         self.bar_hidden = False
         # self.app.installEventFilter(self)
         
-        self._drag_active = False
-        
         self.style_name = "default"
         self.formatter = lambda x: x
         
@@ -245,7 +223,6 @@ class LyricsDisplay(QWidget):
         
         
         self.timer = QTimer(self)
-        self.update_mutex = QMutex()
         self.style_mutex = QMutex()
         
         # Debounce timer for track changes to prevent crashes
@@ -268,8 +245,8 @@ class LyricsDisplay(QWidget):
         self.label.setProgress(0)
         self.label.progressbar.progress = 0
         logging.info("=== APP INITIALIZED - Progress bar reset to 0 ===")
-        
-        # Setup console window toggle for compiled executable
+        self._drag_pos = None
+        self._is_dragging = False
         self.setup_debug_console()
         
         self.now_playing.start_loop()
@@ -284,9 +261,14 @@ class LyricsDisplay(QWidget):
         
         def toggle_console():
             try:
-                import ctypes
                 import sys
                 import io
+
+                if not sys.platform.startswith("win"):
+                    self.toast("Console toggle is only available on Windows")
+                    return
+
+                import ctypes
                 kernel32 = ctypes.windll.kernel32
                 user32 = ctypes.windll.user32
                 
@@ -446,7 +428,6 @@ class LyricsDisplay(QWidget):
         screen_top = screen.geometry().top()
         screen_left = screen.geometry().left()
         
-        # self.setFixedSize(screen_width - 2 * LEFTOUT_WIDTH, TAKSBAR_HEIGHT - 1)
         width = screen_width - 2 * LEFTOUT_WIDTH
         height = TAKSBAR_HEIGHT
         x = (screen_width - width) // 2
@@ -467,16 +448,17 @@ class LyricsDisplay(QWidget):
         self.faux_taskbar.setGeometry(0, 0, self.width(), self.height())
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setFixedSize(self.width(), self.height())
-        self.toaster.setGeometry(self.width() // 3, 0, (self.height() + 10) * 2, (self.height() + 10))
-        
-        # Position minimize button in top-right corner
-        self.minimize_button.move(self.width() - 24, 4)
+        toast_width = max(140, (self.height() + 10) * 2)
+        self.toaster.setGeometry(max(0, (self.width() - toast_width) // 2), 0, toast_width, self.height() + 6)
         
         # Update rounded corners when resizing
         self.applyRoundedCorners()
     
     def minimizeToIcon(self):
         """Minimize the lyrics window to a floating icon"""
+        if self._is_minimized:
+            return
+
         self._is_minimized = True
         
         # Position the restore icon where the minimize button was
@@ -499,6 +481,9 @@ class LyricsDisplay(QWidget):
     
     def restoreFromIcon(self):
         """Restore the lyrics window from the floating icon"""
+        if not self._is_minimized and not self.restore_icon.isVisible():
+            return
+
         self._is_minimized = False
         self.minimized_for_no_lyrics = False  # Reset auto-minimize flag on manual restore
         self.restore_icon.hide()
@@ -509,7 +494,7 @@ class LyricsDisplay(QWidget):
         """Load saved theme preference"""
         settings = QSettings("LyricBar", "WindowSettings")
         saved_theme = settings.value("theme", None)
-        if saved_theme:
+        if saved_theme in MINIMAL_THEME_NAMES:
             from .. import globalvariables
             globalvariables.DEFAULT_THEME = saved_theme
     
@@ -589,8 +574,8 @@ class LyricsDisplay(QWidget):
         self.faux_taskbar.setGeometry(0, 0, self.width(), self.height())
         self.label.setFixedSize(self.width(), self.height())
         self.label.setGeometry(0, 0, self.width(), self.height())
-        self.toaster.setGeometry(self.width() // 3, 0, (self.height() + 10) * 2, (self.height() + 10))
-        self.minimize_button.move(self.width() - 24, 4)
+        toast_width = max(140, (self.height() + 10) * 2)
+        self.toaster.setGeometry(max(0, (self.width() - toast_width) // 2), 0, toast_width, self.height() + 6)
         
         # Apply scale to label (font size)
         self.label.applyScale(self._scale_factor)
@@ -645,8 +630,7 @@ class LyricsDisplay(QWidget):
         # Keep background visibly rounded regardless of mask mode.
         self.faux_taskbar.setStyleSheet(
             f"""
-            background-color: rgba(0, 0, 0, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.14);
+            background-color: rgba(0, 0, 0, 0.12);
             border-radius: {radius}px;
             """
         )
@@ -687,8 +671,7 @@ class LyricsDisplay(QWidget):
             # Reset to transparent for other themes
             self.faux_taskbar.setStyleSheet(
                 f"""
-                background-color: rgba(0, 0, 0, 0.08);
-                border: 1px solid rgba(255, 255, 255, 0.14);
+                background-color: rgba(0, 0, 0, 0.12);
                 border-radius: {self.corner_radius}px;
                 """
             )
@@ -718,7 +701,6 @@ class LyricsDisplay(QWidget):
                 stop:0.666 {colors[4]}F0,
                 stop:0.833 {colors[5]}F0,
                 stop:1 {colors[6]}F0);
-            border: 1px solid rgba(255, 255, 255, 0.22);
             border-radius: {self.corner_radius}px;
         """
         
@@ -892,19 +874,21 @@ class LyricsDisplay(QWidget):
                 # No line available - check if music is playing but no lyrics found
                 self.displaying_line = None
                 
-                # If music is playing but no lyrics available, minimize to icon once
-                # But only if we're not currently searching for lyrics
-                if (self.now_playing and self.now_playing.current_track and 
+                # If music is playing but no lyrics available, minimize to icon once.
+                # Skip this when nothing is actually playing or when the bar is already minimized.
+                if (self.now_playing and self.now_playing.current_track and getattr(self.now_playing, "is_playing", False) and
                     hasattr(self.now_playing, 'has_lyrics') and not self.now_playing.has_lyrics and
                     not self.lyrics_search_in_progress):
                     if not self._is_minimized:
-                        # Prevent rapid auto-minimize cycles (wait at least 5 seconds)
                         current_time = time.time()
                         if current_time - self.last_auto_minimize_time > 5:
                             self.minimized_for_no_lyrics = True
                             self.last_auto_minimize_time = current_time
                             self.minimizeToIcon()
                     return
+
+                if self._is_minimized and self.restore_icon.isVisible():
+                    self.restoreFromIcon()
                 
                 # Otherwise show pause symbol
                 if self.label.text() != "⏸":
@@ -941,9 +925,6 @@ class LyricsDisplay(QWidget):
         
         self.label.setProgress(percent, current_ms, total_ms)
     
-    def updateTaskbar(self):
-        pass
-    
     def update_info(self):
         try:
             self.updateLyrics()
@@ -974,13 +955,10 @@ class LyricsDisplay(QWidget):
         self.setHidden(False)  
         
     def enterEvent(self, e):
-        # Removed auto-hide on hover - now using close button instead
         pass
     
     def leaveEvent(self, e):
-        """Reset cursor when leaving window"""
-        if not self._is_resizing:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+        pass
     
     def mouseDoubleClickEvent(self, e):
         """Handle double-click to copy lyrics"""
@@ -992,32 +970,12 @@ class LyricsDisplay(QWidget):
     
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            # Check if clicking on minimize button (let it handle the click)
             if self.minimize_button.geometry().contains(e.pos()):
                 return
-            
-            # Check if we're on a corner with Ctrl held for resizing
-            if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier:
-                corner = self.getCornerAtPosition(e.pos())
-                if corner:
-                    self._is_resizing = True
-                    self._resize_corner = corner
-                    self._resize_start_pos = e.globalPos()
-                    self._resize_start_geometry = self.geometry()
-                    e.accept()
-                    return
-                else:
-                    # Start dragging with Ctrl held (not on corner)
-                    self._is_dragging = True
-                    self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
-                    e.accept()
-                    return
-            
-            # Other existing left-click behavior
+            self._is_dragging = True
+            self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
             if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
                 self.switchDesktop()
-            # Single click no longer copies lyrics - use double click instead
-            
         elif e.button() == Qt.MouseButton.RightButton:
             if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier == Qt.KeyboardModifier.ShiftModifier:
                 self.switch_mode()
@@ -1033,96 +991,19 @@ class LyricsDisplay(QWidget):
                 self.toast("Track Offset Reset")
     
     def mouseMoveEvent(self, e):
-        # Always update cursor when Ctrl is held (even if not dragging/resizing)
-        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier:
-            if not self._is_resizing and not self._is_dragging:
-                self.updateCursor(e.pos())
-        else:
-            # Reset cursor when Ctrl is not held
-            if not self._is_resizing and not self._is_dragging:
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-        
-        # Handle corner-based proportional resizing (both width and height scale together)
-        if self._is_resizing and self._resize_start_pos is not None:
-            delta = e.globalPos() - self._resize_start_pos
-            new_geometry = self._resize_start_geometry
-            
-            # Calculate scale based on height change (primary driver)
-            # Both width and height scale proportionally, max is base dimensions
-            if self._resize_corner in ['bottom-right', 'bottom-left']:
-                # Bottom corners - increase/decrease height downward
-                new_height = new_geometry.height() + delta.y()
-                if 30 <= new_height <= self._base_height:
-                    # Scale width proportionally
-                    scale = new_height / self._base_height
-                    new_width = int(self._base_width * scale)
-                    
-                    if self._resize_corner == 'bottom-right':
-                        # Keep left edge fixed
-                        self.resize(new_width, new_height)
-                    else:  # bottom-left
-                        # Keep right edge fixed
-                        new_x = new_geometry.x() + new_geometry.width() - new_width
-                        self.setGeometry(new_x, new_geometry.y(), new_width, new_height)
-            
-            elif self._resize_corner in ['top-right', 'top-left']:
-                # Top corners - increase/decrease height upward
-                new_height = new_geometry.height() - delta.y()
-                if 30 <= new_height <= self._base_height:
-                    # Scale width proportionally
-                    scale = new_height / self._base_height
-                    new_width = int(self._base_width * scale)
-                    new_y = new_geometry.y() + delta.y()
-                    
-                    if self._resize_corner == 'top-right':
-                        # Keep left edge fixed
-                        self.setGeometry(new_geometry.x(), new_y, new_width, new_height)
-                    else:  # top-left
-                        # Keep right edge fixed
-                        new_x = new_geometry.x() + new_geometry.width() - new_width
-                        self.setGeometry(new_x, new_y, new_width, new_height)
-            
-            # Update child widgets with scale based on height
-            self.updateChildWidgets()
-            e.accept()
-        # Handle dragging - optimized for smoothness
-        elif self._is_dragging and self._drag_pos is not None:
-            # Use setGeometry for smoother dragging with immediate position update
-            new_pos = e.globalPos() - self._drag_pos
-            self.move(new_pos)
-            
-            # Process events immediately for smoother visual feedback
-            QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
-            
+        if self._is_dragging and self._drag_pos is not None:
+            self.move(e.globalPos() - self._drag_pos)
             e.accept()
     
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            if self._is_resizing:
-                self._is_resizing = False
-                self._resize_corner = None
-                self._resize_start_pos = None
-                self._resize_start_geometry = None
-            if self._is_dragging:
-                self._is_dragging = False
-                self._drag_pos = None
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self._is_dragging = False
+            self._drag_pos = None
     
     def updateCursorOnTimer(self):
-        """Timer callback to update cursor when Ctrl is held"""
-        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier:
-            if not self._is_resizing and not self._is_dragging:
-                pos = self.mapFromGlobal(QCursor.pos())
-                if self.rect().contains(pos):
-                    self.updateCursor(pos)
+        pass
     
     def keyPressEvent(self, e):
-        """Update cursor when Ctrl is pressed"""
-        if e.key() == Qt.Key_Control:
-            self._cursor_update_timer.start()
-            pos = self.mapFromGlobal(QCursor.pos())
-            if self.rect().contains(pos):
-                self.updateCursor(pos)
         # Minimize the bar when Shift+Esc is pressed
         if e.key() == Qt.Key_Escape and e.modifiers() & Qt.ShiftModifier:
             self.minimizeToIcon()
@@ -1131,11 +1012,6 @@ class LyricsDisplay(QWidget):
         super().keyPressEvent(e)
     
     def keyReleaseEvent(self, e):
-        """Reset cursor when Ctrl is released"""
-        if e.key() == Qt.Key_Control:
-            self._cursor_update_timer.stop()
-            if not self._is_resizing and not self._is_dragging:
-                self.setCursor(Qt.CursorShape.ArrowCursor)
         super().keyReleaseEvent(e)
     
     def wheelEvent(self, e):
@@ -1153,127 +1029,50 @@ class SystemTrayIcon(QSystemTrayIcon):
     def __init__(self, icon, parent=None):
         QSystemTrayIcon.__init__(self, icon, parent)
         self.parent = parent
+        self.activated.connect(self.onActivated)
         self.createMenu()
         
     def createMenu(self):
-        from .. import globalvariables
-
         menu = QMenu(self.parent)
         menu.setStyleSheet(
             """
             QMenu {
-                font-family: "Fira Code", "JetBrains Mono", "Cascadia Mono", "Consolas";
-                font-size: 14px;
-                background-color: #1e1e2e;
-                border: 1px solid #45475a;
-                border-radius: 8px;
+                font-family: "Segoe UI", "Arial";
+                font-size: 12px;
+                background-color: #111114;
+                border: 1px solid #2a2a33;
                 padding: 4px;
-                color: #cdd6f4;
+                color: #e8e8e8;
             }
             QMenu::item {
-                padding: 5px 10px;
-                border-radius: 6px;
+                padding: 4px 8px;
                 margin: 1px 2px;
             }
             QMenu::item:selected {
-                background-color: #585b70;
-                color: #f5e0dc;
+                background-color: #2a2a33;
+                color: #ffffff;
             }
             QMenu::separator {
                 height: 1px;
                 margin: 4px 6px;
-                background: #45475a;
+                background: #2a2a33;
             }
             """
         )
-        
-        # Position submenu
-        positionMenu = menu.addMenu("Position")
-        current_position = getattr(self.parent, "position_mode", "top")
-        topAction = positionMenu.addAction("✓ Top" if current_position == "top" else "Top")
-        bottomAction = positionMenu.addAction("✓ Bottom" if current_position == "bottom" else "Bottom")
-        topAction.triggered.connect(lambda: self.setPosition("top"))
-        bottomAction.triggered.connect(lambda: self.setPosition("bottom"))
-        
-        # Theme submenu
-        themeMenu = menu.addMenu("Select Theme")
-        self.populateThemeMenu(themeMenu, selected_theme=globalvariables.DEFAULT_THEME)
-        
-        # Other actions
-        settingsAction = menu.addAction("Open Settings...")
-        copyAction = menu.addAction("Copy Current Lyric")
-        swtichDesktopAction = menu.addAction("Move to Next Screen")
+
+        settingsAction = menu.addAction("Settings")
         reloadThemeAction = menu.addAction("Reload Themes")
+        consoleAction = menu.addAction("Toggle Console")
         menu.addSeparator()
-        # Debug console toggle - only show in compiled executable
-        import sys
-        if getattr(sys, 'frozen', False):  # Only show in PyInstaller executable
-            debugConsoleAction = menu.addAction("🖥️ Toggle Debug Console")
-            debugConsoleAction.triggered.connect(self.toggleDebugConsole)
-            menu.addSeparator()
         restartAction = menu.addAction("Restart")
         exitAction = menu.addAction("Exit")
         
         self.setContextMenu(menu)
-        
-        # Connect actions
         settingsAction.triggered.connect(self.openSettings)
-        copyAction.triggered.connect(self.copyLyrics)
         exitAction.triggered.connect(self.exit)
         restartAction.triggered.connect(self.restart)
-        swtichDesktopAction.triggered.connect(lambda: self.parent.switchDesktop(True))
         reloadThemeAction.triggered.connect(self.reloadThemes)
-        
-    def populateThemeMenu(self, menu, selected_theme=None):
-        """Populate the theme menu with organized submenus"""
-        from ..themes import STYLES
-        
-        # Organize themes into categories - ONLY default themes for performance
-        default_themes = []
-        
-        for theme_name in sorted(STYLES.keys()):
-            if theme_name == "default":
-                continue
-            # Skip artist themes completely for performance
-            elif "/" in theme_name or "\\" in theme_name:
-                continue  # Skip artist-specific themes
-            else:
-                # Default themes only (e.g., "Default - pink")
-                default_themes.append(theme_name)
-        
-        # Add default themes directly to menu
-        if default_themes:
-            for theme_name in default_themes:
-                label = f"✓ {theme_name}" if theme_name == selected_theme else theme_name
-                action = menu.addAction(label)
-                action.triggered.connect(lambda checked, name=theme_name: self.setTheme(name))
-    
-    def setTheme(self, theme_name):
-        """Set a specific theme manually"""
-        from ..themes import STYLES
-        from .. import globalvariables
-        
-        if theme_name in STYLES:
-            try:
-                # Save the user's theme choice so it persists across song changes
-                globalvariables.DEFAULT_THEME = theme_name
-                
-                # Save theme preference to settings
-                self.parent.saveThemeSettings()
-                
-                # Start with default style to ensure all required fields exist
-                style = STYLES["default"].copy()
-                # Merge with selected theme
-                style.update(STYLES[theme_name])
-                style["name"] = theme_name
-                
-                # Update the display with new theme
-                self.parent.updateStyle(style, force_reload=True)
-                self.createMenu()
-                self.parent.toast(f"Theme: {theme_name}", 2000)
-            except Exception as e:
-                self.parent.toast(f"Error applying theme: {str(e)}", 3000)
-                print(f"Error setting theme {theme_name}: {e}")
+        consoleAction.triggered.connect(self.toggleDebugConsole)
     
     def reloadThemes(self):
         """Reload all themes and refresh the menu"""
@@ -1301,53 +1100,43 @@ class SystemTrayIcon(QSystemTrayIcon):
         dialog = SettingsDialog(parent=self.parent, settings_path=settings_path)
         dialog.settings_changed.connect(self.onSettingsChanged)
         dialog.exec_()
+
+    def onActivated(self, reason):
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            self.openSettings()
     
     def onSettingsChanged(self, changes):
         """Handle settings changes"""
-        if changes.get('provider_changed'):
-            # Provider changed, needs restart
-            pass  # Already showing message in dialog
-        else:
-            # Just tracking apps changed, can update dynamically
-            if 'tracking_apps' in changes and hasattr(self.parent, 'now_playing'):
-                # Update tracking apps in the nowplaying instance
-                if hasattr(self.parent.now_playing, 'tracking_apps'):
-                    self.parent.now_playing.tracking_apps = changes['tracking_apps']
-                    self.parent.toast("Tracking apps updated")
-            
-            # Reload lyrics timing offset if changed
-            if changes.get('timing_offset_changed'):
-                from .. import globalvariables
-                import importlib
-                
-                # Reload the globalvariables module to get the new offset value
-                importlib.reload(globalvariables)
-                
-                # Update the lyrics manager to use the new offset
-                from ..backend import lyricmanager
-                importlib.reload(lyricmanager)
-                
-                self.parent.toast(f"Lyrics timing updated to {changes['timing_offset']}ms")
-            
-            # Reload lyrics providers if changed
-            if changes.get('lyrics_provider_changed'):
-                from .. import globalvariables
-                import importlib
-                
-                # Reload the globalvariables module to get the new provider order
-                importlib.reload(globalvariables)
-                
-                # Update the lyrics manager to use the new providers
-                from ..backend import lyricmanager
-                importlib.reload(lyricmanager)
-                
-                primary_provider = changes.get('lyrics_provider', 'Unknown')
-                self.parent.toast(f"Lyrics provider updated to {primary_provider}")
-    
-    def copyLyrics(self):
-        """Copy current lyrics to clipboard"""
-        self.parent.copyLyricsToClipboard()
-        self.parent.toast("Lyrics Copied to Clipboard")
+        from .. import globalvariables
+        import importlib
+
+        if changes.get("progress_bar_changed"):
+            globalvariables.SHOW_PROGRESS_BAR = changes.get("progress_bar", globalvariables.SHOW_PROGRESS_BAR)
+            self.parent.updateStyle(get_style(self.parent.now_playing.current_track), force_reload=True)
+            self.parent.toast("Progress bar updated")
+
+        if changes.get("tracking_apps_changed") and hasattr(self.parent, "now_playing"):
+            if hasattr(self.parent.now_playing, "tracking_apps"):
+                self.parent.now_playing.tracking_apps = changes.get("tracking_apps", [])
+                self.parent.toast("Tracking apps updated")
+
+        if changes.get("theme_changed"):
+            globalvariables.DEFAULT_THEME = changes.get("theme", globalvariables.DEFAULT_THEME)
+            self.parent.saveThemeSettings()
+            self.parent.updateStyle(get_style(self.parent.now_playing.current_track), force_reload=True)
+            self.parent.toast(f"Theme: {globalvariables.DEFAULT_THEME}")
+
+        if changes.get("provider_changed") or changes.get("timing_offset_changed") or changes.get("tracking_apps_changed"):
+            importlib.reload(globalvariables)
+            from ..backend import lyricmanager
+
+            importlib.reload(lyricmanager)
+
+        if changes.get("provider_changed"):
+            self.parent.toast("Provider changed. Restart LyricBar to apply.")
+
+        if changes.get("timing_offset_changed"):
+            self.parent.toast(f"Lyrics timing updated to {changes['timing_offset']}ms")
     
     def toggleDebugConsole(self):
         """Toggle the debug console window"""

@@ -3,7 +3,16 @@ import sys
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QMutex
-from LyricBar.globalvariables import GLOBAL_OFFSET, PLAYING_INFO_PROVIDER, SP_DC, SPICETIFY_PORT, THIRD_PARTY_LYRICS_PROVIDERS, USE_SPOTIFY_LYRICS
+from LyricBar.globalvariables import (
+    GLOBAL_OFFSET,
+    PLAYING_INFO_PROVIDER,
+    SP_DC,
+    SPICETIFY_PORT,
+    THIRD_PARTY_LYRICS_PROVIDERS,
+    USE_SPOTIFY_LYRICS,
+    LYRIC_FOLDER,
+    resource_path,
+)
 from LyricBar.backend.lyricmanager import FromSpotify, FromThirdParty, LyricLine, Lyrics, LyricsManager
 from LyricBar.nowplaying import NowPlayingSystem, NowPlayingSpicetify
 from LyricBar.utils.dataclasses import PlayingStatusTrigger
@@ -40,7 +49,10 @@ class LyricsMaintainer():
             for provider in THIRD_PARTY_LYRICS_PROVIDERS:
                 self.providers[provider] = FromThirdParty([provider])
         
-        self.manager = LyricsManager(providers=self.providers)
+        self.manager = LyricsManager(
+            providers=self.providers,
+            cache_dir=resource_path(LYRIC_FOLDER),
+        )
         
         
         
@@ -68,6 +80,7 @@ class LyricsMaintainer():
     def pause(self):
         self.stopped = True
         self.lyrics = None
+        self.manager.cleanup()
     
     @property
     def line(self):
@@ -127,6 +140,8 @@ class LyricsMaintainer():
             return
         if value == PlayingStatusTrigger.NEW_TRACK:
             self.lyrics = None
+            self.current_line = None
+            self.now_playing.has_lyrics = False
             if self.now_playing.current_track.artist == "" or self.now_playing.current_track.title == "":
                 self.callback_mutex.unlock()
                 return

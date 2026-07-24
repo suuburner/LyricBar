@@ -1,6 +1,6 @@
 Apperance:
   Leftout Width: 600
-  Taskbar Height: 70
+  Taskbar Height: 40
 Lyrics:
   Folder: lyrics
   Global Offset: 0
@@ -27,5 +27,7 @@ STT:
   Model Path: ''
   Tracking Input: ''
 Themes:
-  Default: Bubblegum
+  Default: Soft
   Folder: themes
+Display:
+  Progress Bar: false

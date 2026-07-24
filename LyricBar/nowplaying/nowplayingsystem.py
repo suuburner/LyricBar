@@ -1,9 +1,13 @@
 from datetime import datetime, timedelta
 import logging
 import asyncio
-from winrt.windows.media.control import (
-    GlobalSystemMediaTransportControlsSessionManager as MediaManager,
-)
+
+try:
+    from winrt.windows.media.control import (
+        GlobalSystemMediaTransportControlsSessionManager as MediaManager,
+    )
+except Exception:  # pragma: no cover - platform fallback for non-Windows environments
+    MediaManager = None
 
 from LyricBar.nowplaying.nowplaying import NowPlaying
 from LyricBar.globalvariables import TRACKING_APP
@@ -14,7 +18,11 @@ from LyricBar.utils.dataclasses import PlayingInfo, PlayingStatusTrigger, TrackI
 class NowPlayingSystem(NowPlaying):
     def __init__(self, sync_interval=50, update_callback=None, offset=0, tracking_app=TRACKING_APP):
         super().__init__(sync_interval, update_callback)
-        self.manager = asyncio.run(self.get_media_manager())
+        self.manager = None
+        try:
+            self.manager = asyncio.run(self.get_media_manager())
+        except Exception as exc:
+            logging.debug("Media manager unavailable: %s", exc)
         # Support both single app and list of apps
         if isinstance(tracking_app, list):
             self.tracking_apps = tracking_app
@@ -165,10 +173,14 @@ class NowPlayingSystem(NowPlaying):
         self.sync_mutex.unlock()
 
     async def get_media_manager(self):
+        if MediaManager is None:
+            raise RuntimeError("winrt media control is unavailable on this platform")
         return await MediaManager.request_async()
 
     async def get_best_session(self):
         logging.debug("GETTING APP ID")
+        if self.manager is None:
+            return None, None, None
         sessions = list(self.manager.get_sessions())
         session_ids = [session.source_app_user_model_id for session in sessions]
         logging.debug("Available sessions: %s", session_ids)

@@ -8,7 +8,7 @@ from LyricBar.globalvariables import resource_path
 from PyQt5.QtCore import Qt, QPropertyAnimation, QRect, QSequentialAnimationGroup, QAbstractAnimation
 from PyQt5.QtGui import QBrush, QColor, QPixmap, QGradient, QPainterPath, QPainter
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
-from PyQt5.QtCore import QTimer, pyqtProperty
+from PyQt5.QtCore import pyqtProperty
 
 
 class LyricAnimation(QAbstractAnimation):
@@ -170,8 +170,6 @@ class LyricLabel(OutlinedLabel):
         self.front_pad.show()
         self.front_imagepad.show()
         
-        self.left_time = -1
-        
     @pyqtProperty(float)
     def rounded_radius(self):
         return self._rounded_radius
@@ -213,25 +211,25 @@ class LyricLabel(OutlinedLabel):
         self.back_imagepad.setGeometry(0, 0, width, height)
         self.front_pad.setGeometry(0, 0, width, height)
         self.front_imagepad.setGeometry(0, 0, width, height)
-        
-        # Progress bar: keep lower-third placement while preserving mask-safe padding.
-        bar_width = 400
-        bar_height = 8
-        bar_y = self.height() - 14 + self.progressbar_offset
+
+        # Progress bar: compact and understated.
+        bar_width = 320
+        bar_height = 6
+        bar_y = self.height() - 10 + self.progressbar_offset
         bar_x = (self.width() - bar_width) // 2
         self.progressbar.setGeometry(bar_x, bar_y, bar_width, bar_height)
         
-        # Timestamp labels: 60px wide, 20px tall for proper text rendering
-        timestamp_height = 20
+        # Timestamp labels: small and unobtrusive.
+        timestamp_height = 14
         timestamp_y = bar_y - (timestamp_height - bar_height) // 2
         # Ensure timestamps remain fully visible when rounded window mask is enabled.
         timestamp_y = min(timestamp_y, self.height() - timestamp_height)
         
-        # Left timestamp (60px wide, ending 5px before bar)
-        self.timestamp_left.setGeometry(bar_x - 65, timestamp_y, 60, timestamp_height)
+        # Left timestamp.
+        self.timestamp_left.setGeometry(bar_x - 48, timestamp_y, 44, timestamp_height)
         
-        # Right timestamp (60px wide, starting 5px after bar)
-        self.timestamp_right.setGeometry(bar_x + bar_width + 5, timestamp_y, 60, timestamp_height)
+        # Right timestamp.
+        self.timestamp_right.setGeometry(bar_x + bar_width + 4, timestamp_y, 44, timestamp_height)
         
     def move(self, x, y):
         super().move(x, y)
@@ -240,23 +238,23 @@ class LyricLabel(OutlinedLabel):
         self.front_pad.move(x, y)
         self.front_imagepad.move(x, y)
         
-        # Progress bar: centered 400px bar, 8px height, mask-safe vertical placement.
-        bar_width = 400
-        bar_height = 8
-        bar_y = y + self.height() - 14 + self.progressbar_offset
+        # Progress bar: centered and compact.
+        bar_width = 320
+        bar_height = 6
+        bar_y = y + self.height() - 10 + self.progressbar_offset
         bar_x = x + (self.width() - bar_width) // 2
         self.progressbar.move(bar_x, bar_y)
         
-        # Timestamp labels: 60px wide, 20px tall for proper text rendering
-        timestamp_height = 20
+        # Timestamp labels: small and unobtrusive.
+        timestamp_height = 14
         timestamp_y = bar_y - (timestamp_height - bar_height) // 2
         timestamp_y = min(timestamp_y, y + self.height() - timestamp_height)
         
-        # Left timestamp (60px wide, ending 5px before bar)
-        self.timestamp_left.move(bar_x - 65, timestamp_y)
+        # Left timestamp.
+        self.timestamp_left.move(bar_x - 48, timestamp_y)
         
-        # Right timestamp (60px wide, starting 5px after bar)
-        self.timestamp_right.move(bar_x + bar_width + 5, timestamp_y)
+        # Right timestamp.
+        self.timestamp_right.move(bar_x + bar_width + 4, timestamp_y)
         
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -270,6 +268,11 @@ class LyricLabel(OutlinedLabel):
         self.progressbar.setHidden(hidden)
             
     def setStyle(self, **kwargs):
+        show_progress = kwargs.get("progress-visible", True)
+        self.progressbar.setVisible(show_progress)
+        self.timestamp_left.setVisible(show_progress)
+        self.timestamp_right.setVisible(show_progress)
+
         if "font-size" in kwargs:
             self.setFontSize(int(kwargs["font-size"].replace("px", "")))
         if "font-family" in kwargs:
@@ -354,8 +357,8 @@ class LyricLabel(OutlinedLabel):
                 color_str = f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
                 font_size = kwargs.get("font-size", "30px")
                 font_family = kwargs.get("font-family", "Arial, sans-serif")
-                # Scale timestamp font (0.27 * 1.5 = 0.405, about 40% of lyric font size)
-                timestamp_size = int(float(font_size.replace("px", "")) * 0.405)
+                # Keep timestamps smaller than lyrics but still readable.
+                timestamp_size = max(12, int(float(font_size.replace("px", "")) * 0.85))
                 style = f"background-color: transparent; color: {color_str}; font-size: {timestamp_size}px; font-family: {font_family};"
                 self.timestamp_left.setStyleSheet(style)
                 self.timestamp_right.setStyleSheet(style)

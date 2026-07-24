@@ -51,7 +51,7 @@ class ToastTag(QLabel):
         self.text.setFontFamily("Spotify Mix, Arial, Microsoft YaHei UI")
         self.text.setFontSize(18)
         self.text.setFontWeight("bold")
-        self.text.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         glow = QGraphicsDropShadowEffect()
         glow.setBlurRadius(10)

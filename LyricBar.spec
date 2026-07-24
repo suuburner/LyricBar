@@ -20,25 +20,17 @@ a = Analysis(
         'winrt.windows.media.control',
         'winrt.windows.foundation',
         'winrt.windows.foundation.collections',
-        'winrt.windows.storage',
-        'winrt.windows.storage.streams',
         'winrt',
-        'PIL._tkinter_finder',
         'regex',
-        'mss',
         'pylrc',
         'syncedlyrics',
         'websocket_server',
-        # 'vosk',  # Optional - STT feature
-        # 'pyaudio',  # Optional - STT feature
-        'numpy',
-        'yaml',  # Fixed: was 'pyyaml', should be 'yaml'
+        'yaml',
         'syrics',
         'PyQt5',
-        'qframelesswindow',
-        'psutil',  # Added for process monitoring
-        'win32gui',  # Added for window detection
-        'win32process',  # Added for window detection
+        'psutil',
+        'win32gui',
+        'win32process',
     ],
     hookspath=[],
     hooksconfig={},

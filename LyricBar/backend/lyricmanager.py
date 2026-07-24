@@ -3,8 +3,9 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 import syncedlyrics
-from PyQt5.QtCore import QThread, QMutex
+from PyQt5.QtCore import Qt, QThread, QMutex, pyqtSignal
 from pylrc.parser import synced_line_regex, validateTimecode
 from syrics.api import Spotify as LyricsSpotify
 
@@ -220,7 +221,8 @@ class FromThirdParty(LyricsProvider):
         return lyrics
 
 class LyricsThread(QThread):
-    # start_signal = pyqtSignal()
+    result_ready = pyqtSignal(object)
+
     def __init__(self, maintainer, track, holder, callback=None, holder_lock=None, force_refresh=False, source=None):
         super().__init__()
         self.maintainer = maintainer
@@ -229,32 +231,36 @@ class LyricsThread(QThread):
         self.source = source
         self.callback = callback
         self.holder = holder
-        # self.lock = lock
         self.holder_lock = holder_lock
         self.get_lock = False
         self.cancelled = False
-        # self.start_signal.connect(self.run)
-        # self.waiting_counter = 0
+        self._cleanup_started = False
+        self.result_ready.connect(self._forward_result, type=Qt.QueuedConnection)
+        self.finished.connect(self.deleteLater, type=Qt.QueuedConnection)
+
+    def _forward_result(self, payload):
+        if self.callback is None:
+            return
+        try:
+            self.callback(payload)
+        except Exception as exc:
+            logging.exception("Lyrics callback failed: %s", exc)
         
     def cancel(self):
         self.cancelled = True
         
     def gracefully_out(self):
-        # if self.get_lock and self.lock is not None:
-        #     print("ENDING SEARCH", self.track)
-        #     self.lock.unlock()
-        #     print("ENDING SEARCH 1", self.track)
-        # if self.cancelled:
-        # print("gracefully out")
+        if self._cleanup_started:
+            return
+        self._cleanup_started = True
+
         if self.holder is not None:
             self.holder_lock.lock()
-            if self in self.holder:
-                self.holder.remove(self)
-            self.holder_lock.unlock()
-        
-        # Don't try to quit/wait from within the thread itself
-        # Just mark for deletion - Qt will handle the cleanup when thread finishes
-        self.deleteLater()
+            try:
+                if self in self.holder:
+                    self.holder.remove(self)
+            finally:
+                self.holder_lock.unlock()
         return
 
     def run(self):
@@ -272,12 +278,23 @@ class LyricsThread(QThread):
         if self.cancelled:
             self.gracefully_out()
             return
-        if not os.path.exists(self.maintainer.cache_dir):
-            os.makedirs(self.maintainer.cache_dir)
+        cache_dir = Path(self.maintainer.cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
         ret = None
         if not self.force_refresh and not self.source:
-            if self.track.id is not None and os.path.exists(f"{self.maintainer.cache_dir}/{self.track.id}.json"):
-                jsn = json.load(open(f"{self.maintainer.cache_dir}/{self.track.id}.json", "r", encoding="utf-8"))
+            cache_candidates = []
+            if self.track.id is not None:
+                cache_candidates.append(cache_dir / f"{self.track.id}.json")
+            cache_candidates.append(cache_dir / f"{self.track.hash_id}.json")
+            for cache_path in cache_candidates:
+                if not cache_path.exists():
+                    continue
+                try:
+                    with cache_path.open("r", encoding="utf-8") as handle:
+                        jsn = json.load(handle)
+                except Exception as exc:
+                    logging.warning("Failed to load cached lyrics from %s: %s", cache_path, exc)
+                    continue
                 if jsn is not None and "lyrics" in jsn and "syncType" in jsn["lyrics"] and jsn["lyrics"]["syncType"] == "LINE_SYNCED":
                     ret = Lyrics.from_json(jsn, self.track)
                     if ret and not ret.source:
@@ -286,11 +303,9 @@ class LyricsThread(QThread):
                         self.gracefully_out()
                         return
                     if self.callback is not None:
-                        self.callback((ret, self.track))         
+                        self.result_ready.emit((ret, self.track))
                         self.gracefully_out()
                     return
-            if os.path.exists(f"{self.maintainer.cache_dir}/{self.track.hash_id}.json"):
-                jsn = json.load(open(f"{self.maintainer.cache_dir}/{self.track.hash_id}.json", "r", encoding="utf-8"))
                 if jsn is not None and "lyrics" in jsn and "syncType" in jsn["lyrics"] and jsn["lyrics"]["syncType"] == "LINE_SYNCED":
                     ret = Lyrics.from_json(jsn, self.track)
                     if ret and not ret.source:
@@ -299,7 +314,7 @@ class LyricsThread(QThread):
                         self.gracefully_out()
                         return
                     if self.callback is not None:
-                        self.callback((ret, self.track))
+                        self.result_ready.emit((ret, self.track))
                         self.gracefully_out()
                     return
         if self.cancelled:
@@ -335,13 +350,15 @@ class LyricsThread(QThread):
             self.gracefully_out()
             return
         if self.callback is not None:
-            self.callback((ret, self.track))
+            self.result_ready.emit((ret, self.track))
         self.gracefully_out()
         
         
 class LyricsManager():
     def __init__(self, cache_dir="lyrics", providers=[]):
-        self.cache_dir = cache_dir
+        self.cache_dir = str(Path(cache_dir).expanduser())
+        if not Path(self.cache_dir).is_absolute():
+            self.cache_dir = str((Path.cwd() / self.cache_dir).resolve())
         self.providers = providers
         self.getter = None
         
@@ -388,27 +405,33 @@ class LyricsManager():
         threads_to_cleanup = list(self.lyrics_gripper)
         self.lyrics_gripper.clear()  # Clear the set first
         self.gripper_lock.unlock()
-        
-        # Cancel all threads
+
         for lg in threads_to_cleanup:
             lg.cancel()
-        
-        # Give threads a moment to finish naturally
-        import time
-        time.sleep(0.1)
-        
-        # Force quit any still running threads (from main thread, not from within the thread)
+
         for lg in threads_to_cleanup:
             if lg.isRunning():
-                lg.quit()
-                lg.wait(100)  # Short wait from main thread is OK
+                lg.wait(1000)
+
+        for lg in threads_to_cleanup:
+            if lg.isRunning():
+                logging.warning("Lyrics thread did not stop in time; terminating it")
+                lg.terminate()
+                lg.wait(1000)
+
+        self.last_search_track = None
+        self.last_search_time = 0
         
     def save_lyrics(self, track: TrackInfo, lyrics: Lyrics):
+        cache_dir = Path(self.cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
         if lyrics is None:
-            json.dump({}, open(f"{self.cache_dir}/{track.hash_id}.json", "w", encoding="utf-8"), ensure_ascii=False)
+            with (cache_dir / f"{track.hash_id}.json").open("w", encoding="utf-8") as handle:
+                json.dump({}, handle, ensure_ascii=False)
+            return
         if track.id is not None:
-            lyrics.to_json_file(f"{self.cache_dir}/{track.id}.json")
-        lyrics.to_json_file(f"{self.cache_dir}/{track.hash_id}.json")
+            lyrics.to_json_file(str(cache_dir / f"{track.id}.json"))
+        lyrics.to_json_file(str(cache_dir / f"{track.hash_id}.json"))
         # pass
     # def get_lyrics_async(self, track: TrackInfo, callback: callable = None, force_refresh=False, source=None):
     #     while self.gripper_cancelled:

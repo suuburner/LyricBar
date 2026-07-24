@@ -5,7 +5,14 @@ echo ========================================
 echo.
 
 REM Check if virtual environment exists
-if not exist ".venv" (
+set "PYTHON_EXE="
+if exist ".venv-1\Scripts\python.exe" (
+    set "PYTHON_EXE=.venv-1\Scripts\python.exe"
+) else if exist ".venv\Scripts\python.exe" (
+    set "PYTHON_EXE=.venv\Scripts\python.exe"
+)
+
+if "%PYTHON_EXE%"=="" (
     echo ERROR: Virtual environment not found!
     echo Please run this from the LyricBar directory.
     pause
@@ -13,7 +20,7 @@ if not exist ".venv" (
 )
 
 echo Installing PyInstaller...
-.venv\Scripts\python.exe -m pip install pyinstaller --quiet
+%PYTHON_EXE% -m pip install pyinstaller --quiet
 
 echo.
 echo Cleaning previous builds...
@@ -25,7 +32,7 @@ echo Building LyricBar.exe...
 echo This may take a few minutes...
 echo.
 
-.venv\Scripts\python.exe -m PyInstaller LyricBar.spec
+%PYTHON_EXE% -m PyInstaller LyricBar.spec --noconfirm
 
 if %ERRORLEVEL% EQU 0 (
     echo.
