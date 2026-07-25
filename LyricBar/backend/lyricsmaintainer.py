@@ -35,13 +35,6 @@ class LyricsMaintainer():
         
         self.update_callback = update_callback
 
-        # if PLAYING_INFO_PROVIDER == "Spotify":
-        #     self.now_playing = NowPlayingSpotify(update_callback=self.update_lyrics)
-        # elif PLAYING_INFO_PROVIDER == "System":
-        #     self.now_playing = NowPlayingSystem(update_callback=self.update_lyrics)
-        # else:
-        #     NowPlayingMixed(update_callback=self.update_lyrics)
-        
         self.providers = {}
         if USE_SPOTIFY_LYRICS:
             self.providers["Spotify"] = FromSpotify(SP_DC)
@@ -53,26 +46,19 @@ class LyricsMaintainer():
             providers=self.providers,
             cache_dir=resource_path(LYRIC_FOLDER),
         )
-        
-        
-        
+
         self.lyrics = None
-        # self.style = STYLES["default"]
-        # self.style["name"] = "default"
-        
         self.callback_mutex = QMutex()
         self.lyrics_mutex = QMutex()
         
         self.current_line = None
+        self._last_blocked_reason = None  # diagnostics: avoid log spam in `line`
         
         self.stopped = False  # MUST be set BEFORE register_callback
         
         self.now_playing = now_playing
         self.now_playing.register_callback(self.manager_callback)
         
-    # def start(self):
-    #     self.now_playing.start_loop()
-    
     def start(self):
         self.stopped = False
         self.now_playing.activate(self.manager_callback)
@@ -84,41 +70,44 @@ class LyricsMaintainer():
     
     @property
     def line(self):
-        # # print(self.now_playing.__dict__)
-        # print("has lyrics?", self.now_playing.has_lyrics)
-        
         # Never block UI thread here; keep previous line if writer holds lock briefly.
         if not self.lyrics_mutex.tryLock(0):
             return self.current_line
             
         try:
             if not self.now_playing.has_lyrics:
+                self._log_blocked_once("has_lyrics is False (no result set yet, or search failed/hasn't started)")
                 return None  # Hide bar when no lyrics found
                 
-            if not self.lyrics and self.now_playing.has_lyrics:
-                # Inconsistent state: has_lyrics=True but lyrics=None
-                # This causes infinite sync symbol - reset the state
+            if not self.lyrics:
+                # Inconsistent state: has_lyrics=True but lyrics=None/empty.
                 logging.warning("Inconsistent lyrics state detected - resetting has_lyrics to False")
                 self.now_playing.has_lyrics = False
                 return None  # Hide bar instead of showing sync symbol
                 
-            if not self.lyrics:
-                return None  # Hide bar when no lyrics found (was showing ♬ before)
-                
             if not self.now_playing.is_playing:
+                self._log_blocked_once("now_playing.is_playing is False")
                 return None
                 
             if not self.now_playing.current_begin_time:
+                self._log_blocked_once("now_playing.current_begin_time is falsy (no timeline yet)")
                 return None
                 
             try:
                 l = self.lyrics.get_line_with_timestamp(self.now_playing.progress)
                 if l:
+                    self._last_blocked_reason = None
                     self.current_line = l
                     l.end_timestamp = self.lyrics.lines[l.index + 1].timestamp if l.index < len(self.lyrics.lines) - 1 else -1
                     l = self.lyrics.get_real_time(l)
                     l.begin_time = (self.now_playing.current_begin_time or 0) + l.timestamp
                     return l
+                else:
+                    self._log_blocked_once(
+                        f"get_line_with_timestamp({self.now_playing.progress:.0f}) returned None "
+                        f"(lyrics has {len(self.lyrics.lines or [])} lines, first starts at "
+                        f"{self.lyrics.lines[0].timestamp if self.lyrics.lines else 'n/a'})"
+                    )
                     
             except Exception as e:
                 logging.error(f"Error getting lyrics line: {e}")
@@ -131,27 +120,29 @@ class LyricsMaintainer():
         finally:
             # Always unlock in finally block to prevent deadlocks
             self.lyrics_mutex.unlock()
+
+    def _log_blocked_once(self, reason):
+        """Log why `line` returned None, but only on change, so this doesn't spam
+        the console at the 16ms UI refresh rate."""
+        if reason != self._last_blocked_reason:
+            logging.info(f"[lyrics display blocked] {reason}")
+            self._last_blocked_reason = reason
     
     def manager_callback(self, value):
         if self.stopped:
             return
         if not self.callback_mutex.tryLock(0):
-            # print("UPDATING SKIPPED")
             return
         if value == PlayingStatusTrigger.NEW_TRACK:
+            # Reset lyrics state for the new track. The actual search is triggered
+            # once, from the UI layer (handleTrackChange), which also owns the
+            # lyrics_search_in_progress flag and needs to know when the result lands.
             self.lyrics = None
             self.current_line = None
             self.now_playing.has_lyrics = False
-            if self.now_playing.current_track.artist == "" or self.now_playing.current_track.title == "":
-                self.callback_mutex.unlock()
-                return
-            # if self.update_callback is not None:
-            #     self.update_callback(value)
-            self.manager.get_lyrics(self.now_playing.current_track, lambda x: self.set_lyrics(*x))
+            self._last_blocked_reason = None  # let diagnostics re-report for the new track
             self.callback_mutex.unlock()
             return
-        # if self.update_callback is not None:
-        #     self.update_callback(value)
         self.callback_mutex.unlock()
         return
         
@@ -211,10 +202,18 @@ class LyricsMaintainer():
 
     
     def set_lyrics(self, value, track=None, check_first=False):
+        logging.info(
+            f"set_lyrics called: value={'Lyrics(%d lines, source=%s)' % (len(value.lines or []), value.source) if value else None}, "
+            f"track={track}, current_track={self.now_playing.current_track}"
+        )
         if check_first and not value:
             return
         if track is not None:
             if self.now_playing.current_track != track:
+                logging.warning(
+                    f"set_lyrics REJECTED: track mismatch. search was for {track!r}, "
+                    f"now_playing.current_track is {self.now_playing.current_track!r}"
+                )
                 return
         
         # Use timeout lock to prevent deadlocks

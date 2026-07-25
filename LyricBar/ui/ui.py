@@ -769,6 +769,7 @@ class LyricsDisplay(QWidget):
     
     def handleLyricsResult(self, lyrics, track):
         """Handle lyrics search result and clear search in progress flag"""
+        logging.info(f"handleLyricsResult called: lyrics={'found' if lyrics else 'None'}, track={track}")
         # Clear the search in progress flag
         self.lyrics_search_in_progress = False
         # Call the original set_lyrics method

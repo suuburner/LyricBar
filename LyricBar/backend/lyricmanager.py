@@ -53,8 +53,8 @@ class LyricLine:
          
     def clean_text(self, text):
         text = text.strip()
-        text = text.replace(u"е", "e")
-        text = text.replace(u"a", "a")
+        text = text.replace(u"е", "e")  # Cyrillic 'е' (U+0435) -> Latin 'e'
+        text = text.replace(u"а", "a")  # Cyrillic 'а' (U+0430) -> Latin 'a'
         return text
     
     def copy(self):
@@ -236,6 +236,7 @@ class LyricsThread(QThread):
         self.cancelled = False
         self._cleanup_started = False
         self.result_ready.connect(self._forward_result, type=Qt.QueuedConnection)
+        self.finished.connect(self._remove_from_holder, type=Qt.QueuedConnection)
         self.finished.connect(self.deleteLater, type=Qt.QueuedConnection)
 
     def _forward_result(self, payload):
@@ -250,31 +251,40 @@ class LyricsThread(QThread):
         self.cancelled = True
         
     def gracefully_out(self):
+        # Just marks intent to stop; NOT safe to touch self.holder here since
+        # this runs on the worker thread, inside run() itself. Removing self
+        # from self.holder here would drop the only Python reference keeping
+        # this QThread alive, deallocating it mid-run() (a real source of the
+        # "crash on thread destruction" issue) and silently dropping any
+        # already-queued result_ready signal before it can be delivered.
+        # The actual holder cleanup happens in _remove_from_holder, once
+        # `finished` fires on the main thread after run() has truly ended.
         if self._cleanup_started:
             return
         self._cleanup_started = True
-
-        if self.holder is not None:
-            self.holder_lock.lock()
-            try:
-                if self in self.holder:
-                    self.holder.remove(self)
-            finally:
-                self.holder_lock.unlock()
         return
 
+    def _remove_from_holder(self):
+        if self.holder is None:
+            return
+        self.holder_lock.lock()
+        try:
+            if self in self.holder:
+                self.holder.remove(self)
+        finally:
+            self.holder_lock.unlock()
+
     def run(self):
-        # print("TRYING SEARCH", self.track)
-        # while self.waiting_counter < 50 and not self.lock.tryLock(100):
-        #     self.waiting_counter += 1
-        #     if self.cancelled:
-        #         self.gracefully_out()
-        #         return
-        # if self.waiting_counter >= 50:
-        #     self.gracefully_out()
-        #     return
-        # print("STARTING SEARCH", self.track)
-        # self.get_lock = True
+        try:
+            self._run()
+        except Exception:
+            logging.exception(
+                f"LyricsThread crashed while searching for {self.track.artist} - {self.track.title}"
+            )
+            self.gracefully_out()
+
+    def _run(self):
+        logging.info(f"LyricsThread started for {self.track.artist} - {self.track.title} (source={self.source})")
         if self.cancelled:
             self.gracefully_out()
             return
@@ -300,19 +310,10 @@ class LyricsThread(QThread):
                     if ret and not ret.source:
                         ret.source = "Cache"
                     if self.cancelled:
+                        logging.info("LyricsThread cancelled after cache hit, before emit")
                         self.gracefully_out()
                         return
-                    if self.callback is not None:
-                        self.result_ready.emit((ret, self.track))
-                        self.gracefully_out()
-                    return
-                if jsn is not None and "lyrics" in jsn and "syncType" in jsn["lyrics"] and jsn["lyrics"]["syncType"] == "LINE_SYNCED":
-                    ret = Lyrics.from_json(jsn, self.track)
-                    if ret and not ret.source:
-                        ret.source = "Cache"
-                    if self.cancelled:
-                        self.gracefully_out()
-                        return
+                    logging.info(f"LyricsThread emitting cache hit ({len(ret.lines or [])} lines)")
                     if self.callback is not None:
                         self.result_ready.emit((ret, self.track))
                         self.gracefully_out()
@@ -347,8 +348,13 @@ class LyricsThread(QThread):
             logging.warning(f"✗ No lyrics found for '{self.track.artist} - {self.track.title}' from any provider")
         
         if self.cancelled:
+            logging.info(f"LyricsThread cancelled for {self.track.artist} - {self.track.title}, before emit")
             self.gracefully_out()
             return
+        logging.info(
+            f"LyricsThread emitting result for {self.track.artist} - {self.track.title}: "
+            f"{'found (%d lines)' % len(ret.lines or []) if ret else 'not found'}"
+        )
         if self.callback is not None:
             self.result_ready.emit((ret, self.track))
         self.gracefully_out()
@@ -385,6 +391,10 @@ class LyricsManager():
             if lg.track == track and lg.source == source and not lg.cancelled:
                 found = True
             else:
+                logging.info(
+                    f"Cancelling in-flight lyrics search for {lg.track.artist} - {lg.track.title} "
+                    f"(source={lg.source}) in favor of new request for {track.artist} - {track.title} (source={source})"
+                )
                 lg.cancel()
         if found:
             return
@@ -432,59 +442,8 @@ class LyricsManager():
         if track.id is not None:
             lyrics.to_json_file(str(cache_dir / f"{track.id}.json"))
         lyrics.to_json_file(str(cache_dir / f"{track.hash_id}.json"))
-        # pass
-    # def get_lyrics_async(self, track: TrackInfo, callback: callable = None, force_refresh=False, source=None):
-    #     while self.gripper_cancelled:
-    #         asyncio.sleep(0.5)
-    #     if not os.path.exists(self.cache_dir):
-    #         os.makedirs(self.cache_dir)
-    #     ret = None
-    #     if not force_refresh and not source:
-    #         if track.id is not None and os.path.exists(f"{self.cache_dir}/{track.id}.json"):
-    #             jsn = json.load(open(f"{self.cache_dir}/{track.id}.json", "r", encoding="utf-8"))
-    #             if jsn is not None and "lyrics" in jsn and "syncType" in jsn["lyrics"] and jsn["lyrics"]["syncType"] == "LINE_SYNCED":
-    #                 ret = Lyrics.from_json(jsn, track)    
-    #                 if callback is not None:
-    #                     callback(ret)
-    #                 return ret
-    #         if os.path.exists(f"{self.cache_dir}/{track.hash_id}.json"):
-    #             jsn = json.load(open(f"{self.cache_dir}/{track.hash_id}.json", "r", encoding="utf-8"))
-    #             if jsn is not None and "lyrics" in jsn and "syncType" in jsn["lyrics"] and jsn["lyrics"]["syncType"] == "LINE_SYNCED":
-    #                 ret = Lyrics.from_json(jsn, track)
-    #                 if callback is not None:
-    #                     callback(ret)
-    #                 return ret
-    #     if self.gripper_cancelled:
-    #         self.gripper_cancelled = False
-    #         return
-    #     if source is None:
-    #         source = list(self.providers.keys())
-    #     elif isinstance(source, str):
-    #         source = [source if source in self.providers else None]
-    #     else:
-    #         source = [s if s in self.providers else None for s in source]
-    #     print("Fetching lyrics from ", source)
-    #     for name in source:
-    #         if self.gripper_cancelled:
-    #             self.gripper_cancelled = False
-    #             return
-    #         print("Trying ", name)
-    #         provider = self.providers[name]
-    #         lyrics = provider.get_lyrics(track)
-    #         if lyrics is not None:
-    #             self.save_lyrics(track, lyrics)
-    #             lyrics.source = name
-    #             ret = lyrics
-    #         if ret is not None:
-    #             logging.info(f"LYRICS FOUND: {track.artist} - {track.title} from {provider.__class__.__name__}")
-    #             break
-    #     if self.gripper_cancelled:
-    #         self.gripper_cancelled = False
-    #         return
-    #     if callback is not None:
-    #         callback(ret)
-    #     return ret
-                
+
+
 if __name__ == "__main__":
     lm = LyricsManager(providers=[FromSpotify(SP_DC), FromThirdParty()])
     breakpoint()

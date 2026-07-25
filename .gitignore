@@ -3,6 +3,7 @@
 .venv*/
 venv/
 venv*/
+lyrics/
 
 # Build artifacts
 build/

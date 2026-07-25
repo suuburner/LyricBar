@@ -1,4 +1,3 @@
-
 import logging
 import syncedlyrics
 from syncedlyrics.utils import R_FEAT
@@ -18,6 +17,18 @@ def _str_same(a, b, n):
 
 syncedlyrics.utils.str_score = _str_score
 syncedlyrics.utils.str_same = _str_same
+
+def _length_score(candidate_seconds, target_length_ms):
+    """How close a candidate's duration (seconds) is to the track's length (ms).
+    Higher (closer to 0) is better. Missing/invalid data sorts last instead of
+    crashing the whole search - some providers return null durations."""
+    if candidate_seconds is None or target_length_ms is None:
+        return float("-inf")
+    try:
+        return 0 - abs(float(candidate_seconds) - float(target_length_ms) / 1000)
+    except (TypeError, ValueError):
+        return float("-inf")
+
 
 def _sort_results_with_length(
     results,
@@ -74,7 +85,7 @@ def _get_lrc_musixmatch(self, t):
     body = r.json()["message"]["body"]
     tracks = body["track_list"]
     cmp_key = lambda _: f"{_['track']['track_name']} {_['track']['artist_name']}"
-    track_len_diff = lambda _: - abs(_["track"]["track_length"] - int(t.length)/1000)
+    track_len_diff = lambda _: _length_score(_["track"].get("track_length"), t.length)
     track = _get_best_match_with_length(tracks, search_term, cmp_key, track_len_diff)
     if not track:
         return None
@@ -95,7 +106,7 @@ def _get_lrc_lrclib(self, t):
     if not tracks:
         return None
     tracks = _sort_results_with_length(
-        tracks, search_term, lambda _: f'{_["artistName"]} - {_["trackName"]}', lambda _: 0 - abs(_["duration"] - int(t.length)/1000)
+        tracks, search_term, lambda _: f'{_["artistName"]} - {_["trackName"]}', lambda _: _length_score(_.get("duration"), t.length)
     )
     _id = None
     for track in tracks:
@@ -112,7 +123,10 @@ def _search_track_netease(self, t):
     if not results:
         return None
     cmp_key = lambda _: f"{_.get('name')} {_.get('artists')[0].get('name')}"
-    track = _get_best_match_with_length(results, search_term, cmp_key, lambda _: 0 - abs(_["duration"]/1000 - int(t.length)/1000))
+    track = _get_best_match_with_length(
+        results, search_term, cmp_key,
+        lambda _: _length_score(_["duration"] / 1000 if _.get("duration") is not None else None, t.length)
+    )
     self.session.cookies.update(response.cookies)
     self.session.headers.update({"referer": response.url})
     return track

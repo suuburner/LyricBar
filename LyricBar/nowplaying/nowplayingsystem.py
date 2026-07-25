@@ -34,6 +34,8 @@ class NowPlayingSystem(NowPlaying):
         self.last_matched_tracking_app = None
         self.offset = offset
         self.sync_animation_frame = 0  # Track animation frame for SYNCING message
+        self._none_streak = 0
+        self._NONE_STREAK_TO_DROP = 3  # consecutive missed polls before treating session as gone
 
     def _match_tracking_app_score(self, session_id, tracking_app):
         session_id_l = (session_id or "").lower()
@@ -90,7 +92,23 @@ class NowPlayingSystem(NowPlaying):
             logging.debug("SYNCING SKIPPED")
             return
         info = asyncio.run(self.get_now_playing_info())
-        
+
+        if info is not None:
+            self._none_streak = 0
+            # We got a real response from the media session (playing or not) -
+            # from here on, a later "no response" tick is a genuine session
+            # loss/hiccup, not "first time starting up", so it shouldn't wipe
+            # already-good state.
+            self.is_initialized = True
+        else:
+            self._none_streak += 1
+            if self._none_streak < self._NONE_STREAK_TO_DROP and self.playing_info is not None:
+                # Likely just a transient blip in the async media session read;
+                # keep the current track/state and try again next tick instead
+                # of wiping it and forcing a spurious re-search.
+                self.sync_mutex.unlock()
+                return
+
         if not self.is_initialized and (info is None or not info.is_playing):
             # More generic message when waiting for any music session
             logging.info("WAITING FOR MUSIC")
@@ -267,8 +285,6 @@ class NowPlayingSystem(NowPlaying):
                             # Skip attributes that cause errors
                             pass
             # print(info_dict)
-            # if self.playing_info and self.playing_info.current_begin_time is not None:
-            #     print("Progress: ", datetime.now() - datetime.fromtimestamp(self.playing_info.current_begin_time))
             if "playback_status" not in info_dict:
                 return None
             return PlayingInfo(
@@ -282,11 +298,7 @@ class NowPlayingSystem(NowPlaying):
                         else None
                     ),
                 ),
-                # current_begin_time=(
-                #     (datetime.timestamp(info_dict["last_updated_time"]) - info_dict["position"]/ timedelta(milliseconds=1) + self.offset)
-                #     if "position" in info_dict
-                #     else None
-                # ),
+                # current_begin_time is the epoch-ms moment position was 0 for this track.
                 current_begin_time=(
                     ((info_dict["last_updated_time"] - info_dict["position"]).timestamp()*1000 + self.offset) if ("position" in info_dict and "last_updated_time" in info_dict) else None
                 ),
