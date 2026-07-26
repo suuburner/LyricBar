@@ -319,14 +319,19 @@ class LyricLabel(OutlinedLabel):
 
             elif f"{key}-color" in kwargs:
                 ip.clear()
-                if self.rounded_radius > 0:
-                    p.setStyleSheet(f"border-radius: {self.rounded_radius}px;")
-                else:
-                    p.setStyleSheet("")
+                p.setStyleSheet("")
                 p.setColor(convert_to_color(kwargs[f"{key}-color"], width=self.width(), height=self.height()))
             else:
                 ip.clear()
                 p.setStyleSheet("background-color: transparent")
+
+        if "border-color" in kwargs and kwargs.get("border-width", 0):
+            self.back_pad.setBorder(
+                convert_to_color(kwargs["border-color"]),
+                kwargs.get("border-width", 0),
+            )
+        else:
+            self.back_pad.setBorder(None, 0)
 
         if "progress-color" in kwargs:
             self.progressbar.progress_color = convert_to_color(kwargs["progress-color"])

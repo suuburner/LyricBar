@@ -1,4 +1,5 @@
 import logging
+import signal
 import sys
 import time
 from PyQt5.QtCore import Qt, QTimer, QCoreApplication, pyqtSignal, QMutex, QSettings
@@ -255,93 +256,20 @@ class LyricsDisplay(QWidget):
         # self.applyBackgroundEffect()
     
     def setup_debug_console(self):
-        """Setup the debug console functionality for compiled executable"""
-        self._console_visible = False
-        self._console_handler = None
-        
+        """Set up the in-app log viewer (the "debug console")."""
+        from .components.logviewer import LogViewerDialog
+
+        self._log_viewer = LogViewerDialog(parent=self)
+        self._log_viewer.attach()
+
         def toggle_console():
-            try:
-                import sys
-                import io
+            if self._log_viewer.isVisible():
+                self._log_viewer.hide()
+            else:
+                self._log_viewer.show()
+                self._log_viewer.raise_()
+                self._log_viewer.activateWindow()
 
-                if not sys.platform.startswith("win"):
-                    self.toast("Console toggle is only available on Windows")
-                    return
-
-                import ctypes
-                kernel32 = ctypes.windll.kernel32
-                user32 = ctypes.windll.user32
-                
-                if not self._console_visible:
-                    # Allocate console
-                    kernel32.AllocConsole()
-                    
-                    # Store original handles for restoration
-                    self._original_stdout = sys.stdout
-                    self._original_stderr = sys.stderr
-                    
-                    # Redirect stdout/stderr to console for print statements
-                    console_out = io.TextIOWrapper(open('CONOUT$', 'wb'), encoding='utf-8')
-                    sys.stdout = console_out
-                    sys.stderr = console_out
-                    
-                    # Set console title
-                    kernel32.SetConsoleTitleW("LyricBar Debug Console - Live Logging")
-                    
-                    # Get console window handle and make it nice
-                    console_hwnd = kernel32.GetConsoleWindow()
-                    if console_hwnd:
-                        # Set console window size and position
-                        user32.SetWindowPos(console_hwnd, 0, 100, 100, 800, 600, 0x0040)  # SWP_SHOWWINDOW
-                        # Make console window topmost briefly to show it
-                        user32.SetWindowPos(console_hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002)  # HWND_TOPMOST
-                        user32.SetWindowPos(console_hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002)  # HWND_NOTOPMOST
-                    
-                    self._console_visible = True
-                    print("🖥️  LyricBar Debug Console Activated!")
-                    print("📊 Live logging enabled - you'll see all debug info here")
-                    print("=" * 60)
-                    
-                    # Reconfigure existing logging handlers to use the console
-                    # Remove any existing handlers that might conflict
-                    root_logger = logging.getLogger()
-                    for handler in root_logger.handlers[:]:
-                        if isinstance(handler, logging.StreamHandler) and hasattr(handler, 'stream'):
-                            if handler.stream in (self._original_stdout, self._original_stderr, sys.__stdout__, sys.__stderr__):
-                                root_logger.removeHandler(handler)
-                    
-                    # Add a new console handler using the redirected stdout
-                    self._console_handler = logging.StreamHandler(sys.stdout)
-                    self._console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s:%(name)s:%(message)s'))
-                    self._console_handler.setLevel(logging.INFO)
-                    root_logger.addHandler(self._console_handler)
-                    
-                    # Test the logging
-                    print("📊 Logging system configured for console output")
-                    logging.info("🖥️ Debug console activated successfully!")
-                    logging.info("📊 All future logs will appear here in real-time")
-                    
-                else:
-                    # Remove console handler first
-                    if self._console_handler:
-                        root_logger = logging.getLogger()
-                        root_logger.removeHandler(self._console_handler)
-                        self._console_handler = None
-                    
-                    # Restore original stdout/stderr
-                    if hasattr(self, '_original_stdout'):
-                        sys.stdout = self._original_stdout
-                    if hasattr(self, '_original_stderr'):
-                        sys.stderr = self._original_stderr
-                    
-                    # Hide console
-                    kernel32.FreeConsole()
-                    self._console_visible = False
-                    logging.info("🖥️  Debug console hidden")
-                    
-            except Exception as e:
-                logging.error(f"❌ Failed to toggle console: {e}")
-        
         # Store toggle function globally for access from UI
         import builtins
         builtins.toggle_console = toggle_console
@@ -1246,4 +1174,21 @@ def main():
     # we.setAeroEffect(ptr)  # Commented out - was causing black background instead of transparent
     trayIcon = SystemTrayIcon(QIcon(resource_path("resources/icon.ico")), parent=ui)
     trayIcon.show()
+
+    # Graceful Ctrl+C handling for dev mode (`python main.py` in a terminal).
+    # PyQt's event loop is a C++ loop that doesn't hand control back to the
+    # Python interpreter between events, so Python's SIGINT handler is either
+    # never invoked or only invoked after an unpredictable delay -- Ctrl+C
+    # would otherwise appear to do nothing. The standard fix is a short-
+    # interval no-op QTimer: it forces a trip back into the Python
+    # interpreter often enough that a pending signal actually gets handled.
+    def handle_sigint(signum, frame):
+        logging.info("Ctrl+C received - shutting down gracefully")
+        trayIcon.exit()
+
+    signal.signal(signal.SIGINT, handle_sigint)
+    sigint_keepalive_timer = QTimer()
+    sigint_keepalive_timer.timeout.connect(lambda: None)
+    sigint_keepalive_timer.start(200)
+
     sys.exit(app.exec())

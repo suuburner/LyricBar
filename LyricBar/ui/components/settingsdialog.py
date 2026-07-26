@@ -170,12 +170,48 @@ class SettingsDialog(QDialog):
                 QMessageBox.information(self, "Detection unavailable", "No supported media session manager is available on this system.")
                 return
 
-            _, current_app_id, _ = asyncio.run(probe.get_best_session())
-            if current_app_id:
-                self.tracking_apps.setText(current_app_id)
-                QMessageBox.information(self, "Detected app", f"Detected media app: {current_app_id}")
-            else:
-                QMessageBox.information(self, "No active app", "No currently playing media app was detected.")
+            # NOTE: this used to call probe.get_best_session(), which only
+            # matches sessions against the *already configured* tracking-app
+            # list -- with tracking_app=[] that match loop has nothing to
+            # iterate, so it always returned nothing, no matter what was
+            # actually playing. list_available_sessions() lists every live
+            # session with no filtering, same idea as the standalone
+            # get_app_ids.py diagnostic script.
+            sessions = asyncio.run(probe.list_available_sessions())
+
+            if not sessions:
+                QMessageBox.information(
+                    self,
+                    "No active app",
+                    "No media sessions were found. Start playing something and try again.",
+                )
+                return
+
+            # Prefer a session that's actually playing; among those (or if
+            # none are playing) prefer one with track info attached.
+            def rank(s):
+                return (s["is_playing"], bool(s["title"]))
+
+            best = max(sessions, key=rank)
+
+            # Append to whatever is already in the field instead of
+            # overwriting it -- this used to call setText(best["app_id"])
+            # directly, which wiped out any apps already listed there.
+            existing = [app.strip() for app in self.tracking_apps.text().split(",") if app.strip()]
+            if best["app_id"] not in existing:
+                existing.append(best["app_id"])
+            self.tracking_apps.setText(", ".join(existing))
+
+            lines = []
+            for s in sessions:
+                marker = "▶" if s["is_playing"] else " "
+                track = f"{s['artist']} - {s['title']}" if s["title"] else "no track info"
+                lines.append(f"{marker} {s['app_id']}  ({track})")
+            QMessageBox.information(
+                self,
+                "Detected apps",
+                "Added: " + best["app_id"] + "\n\nAll sessions found:\n" + "\n".join(lines),
+            )
         except Exception as exc:
             QMessageBox.warning(self, "Detection failed", f"Unable to detect the current audio app: {exc}")
 

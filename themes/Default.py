@@ -6,6 +6,8 @@ STYLES = {
         "progress-color": "#c3c3c3",
         "progress-line-color": "#7a7f8a",
         "font-size": "16px",
+        "border-color": "#7a7f8a99",
+        "border-width": 1.5,
     },
     "Catppuccin Mocha": {
         "background-color": "#1e1e2eee",
@@ -14,6 +16,8 @@ STYLES = {
         "progress-color": "#b4befe",
         "progress-line-color": "#cba6f7",
         "font-size": "16px",
+        "border-color": "#cba6f799",
+        "border-width": 1.5,
     },
     "Everforest": {
         "background-color": "#2f3833ee",
@@ -22,6 +26,8 @@ STYLES = {
         "progress-color": "#a7c080",
         "progress-line-color": "#a7c080",
         "font-size": "16px",
+        "border-color": "#a7c08099",
+        "border-width": 1.5,
     },
     "Gruvbox": {
         "background-color": "#282828ee",
@@ -30,5 +36,7 @@ STYLES = {
         "progress-color": "#fabd2f",
         "progress-line-color": "#fabd2f",
         "font-size": "16px",
+        "border-color": "#fabd2f99",
+        "border-width": 1.5,
     },
 }

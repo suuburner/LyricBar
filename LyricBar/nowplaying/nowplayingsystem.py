@@ -192,6 +192,39 @@ class NowPlayingSystem(NowPlaying):
             raise RuntimeError("winrt media control is unavailable on this platform")
         return await MediaManager.request_async()
 
+    async def list_available_sessions(self):
+        """List every live media session with no tracking-app filtering.
+
+        `get_best_session()` above is deliberately filtered to only the
+        already-configured `tracking_apps` -- that's right for normal sync,
+        but wrong for *discovering* an app id in the first place (with an
+        empty/mismatched tracking list it always returns nothing, since the
+        matching loop has nothing configured to iterate). This is the
+        unfiltered equivalent, used by the settings dialog's "Detect" button.
+        """
+        if self.manager is None:
+            return []
+        sessions = list(self.manager.get_sessions())
+        results = []
+        for session in sessions:
+            app_id = session.source_app_user_model_id
+            title, artist = None, None
+            try:
+                info = await session.try_get_media_properties_async()
+                if info is not None:
+                    title, artist = info.title, info.artist
+            except Exception as exc:
+                logging.debug("Could not read media properties for %s: %s", app_id, exc)
+            results.append(
+                {
+                    "app_id": app_id,
+                    "title": title,
+                    "artist": artist,
+                    "is_playing": self._is_session_playing(session),
+                }
+            )
+        return results
+
     async def get_best_session(self):
         logging.debug("GETTING APP ID")
         if self.manager is None:
