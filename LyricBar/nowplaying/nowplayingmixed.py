@@ -5,6 +5,8 @@ from .nowplaying import NowPlaying
 from .nowplayingspotify import NowPlayingSpotify
 from .nowplayingsystem import NowPlayingSystem
 
+logger = logging.getLogger(__name__)
+
 
 class NowPlayingMixed(NowPlaying):
     def __init__(self, sync_interval=50, update_callback=None):
@@ -40,48 +42,44 @@ class NowPlayingMixed(NowPlaying):
         return True
 
     def sync(self):
-        # if self.playing_info is not None and self.playing_info.is_playing:
-        #     logging.info(
-        #         f"NOW PLAYING: {self.playing_info.current_track_artist} - {self.playing_info.current_track_title} ({int(time.time()*1000) - self.playing_info.current_begin_time}/{self.playing_info.current_track_length})"
-        #     )
-        logging.info("TRY SYNC WITH SYSTEM")
+        logger.debug("Attempting sync with system media session")
         if not self.sync_mutex.tryLock(0):
-            logging.info("SYNCING SKIPPED")
+            logger.debug("Sync skipped: previous sync still in progress")
             return
         info = asyncio.run(self.system.get_now_playing_info())
         if info is None:
             self.sync_mutex.unlock()
             return
         if not info.is_playing:
-            logging.info("PAUSING")
+            logger.debug("Playback paused")
             self.playing_info = info
             if self.update_callback is not None:
                 self.update_callback(self.playing_info)
             self.sync_mutex.unlock()
             return
         if self.track_check(self.playing_info, info):
-            print("NEW TRACK: ", info.current_track)
+            logger.debug("New track: %s", info.current_track)
             self.playing_info = info
             self.synced_with_spotify = False
         if not self.synced_with_spotify:
-            logging.info("TRY SYNCING WITH SPOTIFY TO GET ID")
+            logger.debug("Trying to sync with Spotify Web API to get track id")
             onlineinfo = asyncio.run(self.spotify.get_now_playing_info())
             if onlineinfo is None or onlineinfo.current_track_id is None:
                 self.synced_with_spotify = False
-                logging.info("FAILED TO SYNC WITH SPOTIFY")
+                logger.debug("Failed to sync with Spotify Web API")
                 self.sync_mutex.unlock()
                 return
             if self.playing_info.current_track != onlineinfo.current_track:
                 self.synced_with_spotify = False
-                logging.info("SPOTIFY NOT UPDATED YET")
+                logger.debug("Spotify Web API not updated yet")
                 self.sync_mutex.unlock()
                 return
             self.playing_info.current_track_id = onlineinfo.current_track_id
             self.synced_with_spotify = True
-            print("NEW TRACK: ", info.current_track)
+            logger.debug("Synced track id via Spotify Web API: %s", info.current_track)
             if self.update_callback is not None:
                 self.update_callback(self.playing_info)
         elif self.system.update_check(self.playing_info, info):
-            logging.info("SYNCING")
+            logger.debug("Syncing")
             self.playing_info = info
         self.sync_mutex.unlock()

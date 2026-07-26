@@ -1,7 +1,5 @@
 """Minimal settings dialog for LyricBar."""
 
-import yaml
-
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
@@ -21,26 +19,20 @@ from PyQt5.QtWidgets import (
 )
 
 from LyricBar import themes
-from LyricBar.globalvariables import resource_path
+from LyricBar.config import resource_path, settings
 
 
 class SettingsDialog(QDialog):
     settings_changed = pyqtSignal(dict)
 
-    def __init__(self, parent=None, settings_path="settings.yaml"):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.settings_path = settings_path
-        self.settings = {}
-        self.load_settings()
+        # NOTE: this used to open and parse settings.yaml itself, independently
+        # of LyricBar.config.AppSettings -- two separate places understanding
+        # the same file's schema, and they'd already drifted apart. Reading
+        # from the shared `settings` singleton means there's exactly one
+        # place that understands settings.yaml's shape.
         self.init_ui()
-
-    def load_settings(self):
-        try:
-            with open(self.settings_path, "r", encoding="utf-8") as handle:
-                self.settings = yaml.safe_load(handle) or {}
-        except Exception as exc:
-            QMessageBox.warning(self, "Error", f"Failed to load settings: {exc}")
-            self.settings = {}
 
     def init_ui(self):
         self.setWindowTitle("LyricBar Settings")
@@ -65,42 +57,37 @@ class SettingsDialog(QDialog):
 
         self.provider_combo = QComboBox()
         self.provider_combo.addItems(["System", "Spicetify"])
-        self.provider_combo.setCurrentText(self.settings.get("Playing Info", {}).get("Provider", "System"))
+        self.provider_combo.setCurrentText(settings.playing_info_provider)
         form.addRow("Provider", self.provider_combo)
 
         self.spicetify_port = QSpinBox()
         self.spicetify_port.setRange(1, 65535)
-        self.spicetify_port.setValue(int(self.settings.get("Playing Info", {}).get("Spicetify Port", 8974)))
+        self.spicetify_port.setValue(int(settings.spicetify_port))
         form.addRow("Spicetify port", self.spicetify_port)
 
         self.timing_offset = QSpinBox()
         self.timing_offset.setRange(-5000, 5000)
         self.timing_offset.setSingleStep(50)
         self.timing_offset.setSuffix(" ms")
-        self.timing_offset.setValue(int(self.settings.get("Lyrics", {}).get("Timing Offset", 300)))
+        self.timing_offset.setValue(int(settings.lyrics_timing_offset))
         form.addRow("Timing offset", self.timing_offset)
 
         self.theme_combo = QComboBox()
         theme_names = [name for name in themes.MINIMAL_THEME_NAMES if name in themes.STYLES]
         self.theme_combo.addItems(theme_names)
-        current_theme = self.settings.get("Themes", {}).get("Default")
-        if current_theme in theme_names:
-            self.theme_combo.setCurrentText(current_theme)
+        if settings.default_theme in theme_names:
+            self.theme_combo.setCurrentText(settings.default_theme)
         elif theme_names:
             self.theme_combo.setCurrentIndex(0)
         form.addRow("Theme", self.theme_combo)
 
         self.progress_checkbox = QCheckBox("Show progress bar")
-        self.progress_checkbox.setChecked(bool(self.settings.get("Display", {}).get("Progress Bar", True)))
+        self.progress_checkbox.setChecked(bool(settings.show_progress_bar))
         form.addRow("Progress", self.progress_checkbox)
 
         self.tracking_apps = QLineEdit()
-        tracking_app = self.settings.get("Playing Info", {}).get("Tracking App", ["Spotify.exe"])
-        if isinstance(tracking_app, list):
-            tracking_text = ", ".join(tracking_app)
-        else:
-            tracking_text = str(tracking_app)
-        self.tracking_apps.setText(tracking_text)
+        tracking_app = settings.tracking_app
+        self.tracking_apps.setText(", ".join(tracking_app) if isinstance(tracking_app, list) else str(tracking_app))
         self.tracking_apps.setPlaceholderText("Spotify.exe, other-app.exe")
 
         tracking_row = QWidget(self)
@@ -194,34 +181,33 @@ class SettingsDialog(QDialog):
 
     def save_settings(self):
         try:
-            current_provider = self.settings.get("Playing Info", {}).get("Provider", "System")
+            current_provider = settings.playing_info_provider
             new_provider = self.provider_combo.currentText()
-            current_offset = int(self.settings.get("Lyrics", {}).get("Timing Offset", 300))
+            current_offset = settings.lyrics_timing_offset
             new_offset = self.timing_offset.value()
-            current_theme = self.settings.get("Themes", {}).get("Default", "Default")
+            current_theme = settings.default_theme
             new_theme = self.theme_combo.currentText()
-            current_progress = bool(self.settings.get("Display", {}).get("Progress Bar", True))
+            current_progress = settings.show_progress_bar
             new_progress = self.progress_checkbox.isChecked()
-            current_tracking = self.settings.get("Playing Info", {}).get("Tracking App", ["Spotify.exe"])
-            if isinstance(current_tracking, str):
-                current_tracking = [current_tracking]
+            current_tracking = settings.tracking_app
 
-            self.settings.setdefault("Playing Info", {})
-            self.settings.setdefault("Lyrics", {})
-            self.settings.setdefault("Themes", {})
-            self.settings.setdefault("Display", {})
-
-            self.settings["Playing Info"]["Provider"] = new_provider
-            self.settings["Playing Info"]["Spicetify Port"] = self.spicetify_port.value()
             tracking_apps = [app.strip() for app in self.tracking_apps.text().split(",") if app.strip()]
-            if tracking_apps:
-                self.settings["Playing Info"]["Tracking App"] = tracking_apps
-            self.settings["Lyrics"]["Timing Offset"] = new_offset
-            self.settings["Themes"]["Default"] = new_theme
-            self.settings["Display"]["Progress Bar"] = new_progress
+            if not tracking_apps:
+                tracking_apps = current_tracking
 
-            with open(self.settings_path, "w", encoding="utf-8") as handle:
-                yaml.safe_dump(self.settings, handle, sort_keys=False, allow_unicode=True)
+            # Single write path: persist to disk AND update the shared
+            # `settings` object in place, so every module holding a reference
+            # to it sees the new values immediately.
+            settings.update_and_persist({
+                "Playing Info": {
+                    "Provider": new_provider,
+                    "Spicetify Port": self.spicetify_port.value(),
+                    "Tracking App": tracking_apps,
+                },
+                "Lyrics": {"Timing Offset": new_offset},
+                "Themes": {"Default": new_theme},
+                "Display": {"Progress Bar": new_progress},
+            })
 
             changes = {
                 "provider": new_provider,

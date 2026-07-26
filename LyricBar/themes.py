@@ -1,12 +1,15 @@
 import importlib.util
+import logging
 import os
 from pathlib import Path
 
 import regex as re
 
-from LyricBar import globalvariables
+from LyricBar.config import settings
 from LyricBar.utils.dataclasses import TrackInfo
 from LyricBar.utils.tools import hex_to_rgba
+
+logger = logging.getLogger(__name__)
 
 STYLES = {}
 _theme_cache = {}
@@ -174,11 +177,17 @@ def load_themes():
         }
     )
 
-    theme_root = Path(globalvariables.THEME_FOLDER)
+    theme_root = Path(settings.theme_folder)
     if not theme_root.exists():
-        print("Loaded 0 themes.")
+        logger.warning("Theme folder %s does not exist; only the built-in default theme is available.", theme_root)
         return
 
+    # NOTE: this walks and exec's every artist theme .py file on every call.
+    # With ~50 artist files this is the known slow path (the repo even ships
+    # a backup_artist_themes.ps1 script whose whole purpose is to move these
+    # files out of the way "for performance"). Left as-is for this cleanup
+    # pass; splitting theme *data* from theme *matching logic* so files don't
+    # need to be exec'd at all is flagged as follow-up work.
     loaded_count = 0
     for theme_path in sorted(theme_root.rglob("*.py")):
         module = _load_theme_module(theme_root, theme_path)
@@ -189,7 +198,7 @@ def load_themes():
         STYLES.update(styles)
         loaded_count += 1
 
-    print(f"Loaded {loaded_count} themes.")
+    logger.info("Loaded %d themes.", loaded_count)
 
 
 def get_style(track: TrackInfo):
@@ -200,8 +209,8 @@ def get_style(track: TrackInfo):
             track.artist,
             track.title,
             album,
-            globalvariables.DEFAULT_THEME,
-            globalvariables.SHOW_PROGRESS_BAR,
+            settings.default_theme,
+            settings.show_progress_bar,
         )
         cached_style = _theme_cache.get(cache_key)
         if cached_style is not None:
@@ -210,7 +219,7 @@ def get_style(track: TrackInfo):
     style_name = "default"
     style = STYLES["default"].copy()
 
-    default_theme = globalvariables.DEFAULT_THEME
+    default_theme = settings.default_theme
     if default_theme is not None and default_theme in STYLES:
         style_name = default_theme.replace("\\", "/")
         default_style = STYLES[style_name]
@@ -241,7 +250,7 @@ def get_style(track: TrackInfo):
     style = _normalize_minimal_style(style)
 
     style["name"] = style_name
-    style["progress-visible"] = globalvariables.SHOW_PROGRESS_BAR
+    style["progress-visible"] = settings.show_progress_bar
 
     if cache_key is not None:
         if len(_theme_cache) >= _cache_max_size:

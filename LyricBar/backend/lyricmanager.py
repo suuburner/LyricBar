@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QThread, QMutex, pyqtSignal
 from pylrc.parser import synced_line_regex, validateTimecode
 from syrics.api import Spotify as LyricsSpotify
 
-from ..globalvariables import SP_DC, LYRICS_TIMING_OFFSET
+from ..config import settings
 from ..utils.dataclasses import TrackInfo
 from ..utils.syncedlyricspatch import *
 
@@ -78,8 +78,10 @@ class Lyrics:
             self._cursor_index = -1
             return None
 
-        # Use global LYRICS_TIMING_OFFSET (positive = earlier, negative = later)
-        adjusted_timestamp = timestamp + LYRICS_TIMING_OFFSET
+        # Read live from settings (positive = earlier, negative = later) so a
+        # timing-offset change from the settings dialog takes effect immediately,
+        # instead of the value being frozen to whatever it was at import time.
+        adjusted_timestamp = timestamp + settings.lyrics_timing_offset
 
         # Cursor-based lookup avoids full scans every frame and keeps UI updates tight.
         idx = self._cursor_index
@@ -442,8 +444,3 @@ class LyricsManager():
         if track.id is not None:
             lyrics.to_json_file(str(cache_dir / f"{track.id}.json"))
         lyrics.to_json_file(str(cache_dir / f"{track.hash_id}.json"))
-
-
-if __name__ == "__main__":
-    lm = LyricsManager(providers=[FromSpotify(SP_DC), FromThirdParty()])
-    breakpoint()

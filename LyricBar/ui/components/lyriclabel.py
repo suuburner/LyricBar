@@ -4,7 +4,7 @@ from LyricBar.ui.components.progressbar import ProgressBar
 from LyricBar.ui.components.pad import Pad
 from LyricBar.ui.components.outlinedlabel import OutlinedLabel
 from PyQt5.QtWidgets import QLabel
-from LyricBar.globalvariables import resource_path
+from LyricBar.config import resource_path
 from PyQt5.QtCore import Qt, QPropertyAnimation, QRect, QSequentialAnimationGroup, QAbstractAnimation
 from PyQt5.QtGui import QBrush, QColor, QPixmap, QGradient, QPainterPath, QPainter
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
@@ -516,12 +516,3 @@ class LyricLabel(OutlinedLabel):
         mins = seconds // 60
         secs = seconds % 60
         return f"{mins}:{secs:02d}"
-    
-    
-        
-        
-    
-        
-    
-        
-    

@@ -1,23 +1,15 @@
+import logging
 from datetime import datetime
 from PyQt5.QtCore import QMutex, QObject, QTimer
-import os
 
 from ..utils.dataclasses import PlayingStatusTrigger
+from ..config import settings
 
-from ..globalvariables import GLOBAL_OFFSET, SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI
+logger = logging.getLogger(__name__)
 
-
-
-os.environ["SPOTIPY_CLIENT_ID"] = SPOTIPY_CLIENT_ID
-os.environ["SPOTIPY_CLIENT_SECRET"] = SPOTIPY_CLIENT_SECRET
-os.environ["SPOTIPY_REDIRECT_URI"] = SPOTIPY_REDIRECT_URI
-
-# if HTTP_PROXY and HTTP_PROXY != "":
-#     os.environ["http_proxy"] = HTTP_PROXY
-#     os.environ["HTTP_PROXY"] = HTTP_PROXY
-# if HTTPS_PROXY and HTTPS_PROXY != "":
-#     os.environ["https_proxy"] = HTTPS_PROXY
-#     os.environ["HTTPS_PROXY"] = HTTPS_PROXY
+# NOTE: Spotify Web API credentials are set once, in nowplayingspotify.py
+# (the only provider that actually needs them), not here in the shared
+# base class -- every provider used to pay that import-time cost.
 
 
 class NowPlaying(QObject):
@@ -32,8 +24,8 @@ class NowPlaying(QObject):
         self.sync_timer.timeout.connect(self.sync)
         self.sync_interval = sync_interval
         self.started = False
-        
-        self._global_offset = GLOBAL_OFFSET
+
+        self._global_offset = settings.global_offset
 
     def start_loop(self):
         self.started = True
@@ -79,7 +71,7 @@ class NowPlaying(QObject):
     
     @global_offset.setter
     def global_offset(self, value):
-        print("GLOBAL OFFSET UPDATED: ", value)
+        logger.debug("Global offset updated: %s", value)
         self._global_offset = value
             
     @property
@@ -157,14 +149,3 @@ class NowPlaying(QObject):
     @has_lyrics.setter
     def has_lyrics(self, value):
         self.playing_info.has_lyrics = value
-
-
-
-
-
-
-
-
-
-
-

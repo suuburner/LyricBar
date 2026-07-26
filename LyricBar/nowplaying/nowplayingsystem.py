@@ -10,20 +10,25 @@ except Exception:  # pragma: no cover - platform fallback for non-Windows enviro
     MediaManager = None
 
 from LyricBar.nowplaying.nowplaying import NowPlaying
-from LyricBar.globalvariables import TRACKING_APP
+from LyricBar.config import settings
 from LyricBar.utils.dataclasses import PlayingInfo, PlayingStatusTrigger, TrackInfo
 
 
 
 class NowPlayingSystem(NowPlaying):
-    def __init__(self, sync_interval=50, update_callback=None, offset=0, tracking_app=TRACKING_APP):
+    def __init__(self, sync_interval=50, update_callback=None, offset=0, tracking_app=None):
         super().__init__(sync_interval, update_callback)
         self.manager = None
         try:
             self.manager = asyncio.run(self.get_media_manager())
         except Exception as exc:
             logging.debug("Media manager unavailable: %s", exc)
-        # Support both single app and list of apps
+        # Support both single app and list of apps. `tracking_app=None` means
+        # "use whatever is currently configured" -- read live from `settings`
+        # here (construction time) rather than baking in a stale default
+        # argument, since `settings` can change after this module is imported.
+        if tracking_app is None:
+            tracking_app = settings.tracking_app
         if isinstance(tracking_app, list):
             self.tracking_apps = tracking_app
         else:
@@ -172,18 +177,10 @@ class NowPlayingSystem(NowPlaying):
             if self.update_callback is not None:
                 self.update_callback(PlayingStatusTrigger.RESUME)
         if info.is_playing and self.playing_info and self.update_check(self.playing_info, info):
-            # Animated SYNCING message with cycling dashes on same line
-            dash_patterns = ["", ".", "..", "..."]
-            pattern = dash_patterns[self.sync_animation_frame % len(dash_patterns)]
-            if self.sync_animation_frame == 0:
-                # First sync shows "SYNCING" normally
-                logging.info("SYNCING")
-            else:
-                # Use print with carriage return to update same line
-                import sys
-                print(f"\rINFO:root:SYNCING{pattern}   ", end='', flush=True, file=sys.stderr)
+            logging.debug("Syncing (frame %s)", self.sync_animation_frame)
             self.sync_animation_frame += 1
-            
+
+
             if self.playing_info is not None:
                 self.playing_info.update(info)
             else:
@@ -306,21 +303,3 @@ class NowPlayingSystem(NowPlaying):
                 last_updated_time=datetime.timestamp(info_dict["last_updated_time"]) if "last_updated_time" in info_dict else None,
             )
         return None
-    
-if __name__ == "__main__":
-    from PyQt5.QtWidgets import QApplication
-    import sys
-    
-    def callback(trigger):
-        if trigger == PlayingStatusTrigger.PAUSE:
-            print("PAUSE")
-        elif trigger == PlayingStatusTrigger.RESUME:
-            print("RESUME")
-        elif trigger == PlayingStatusTrigger.NEW_TRACK:
-            print("NEW TRACK")
-    
-    app = QApplication(sys.argv)
-    np = NowPlayingSystem(update_callback=callback, offset=100)
-    np.start_loop()
-    breakpoint()
-    sys.exit(app.exec_())

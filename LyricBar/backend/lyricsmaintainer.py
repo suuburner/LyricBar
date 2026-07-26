@@ -1,32 +1,12 @@
 import logging
-import sys
-from datetime import datetime
-from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QMutex
-from LyricBar.globalvariables import (
-    GLOBAL_OFFSET,
-    PLAYING_INFO_PROVIDER,
-    SP_DC,
-    SPICETIFY_PORT,
-    THIRD_PARTY_LYRICS_PROVIDERS,
-    USE_SPOTIFY_LYRICS,
-    LYRIC_FOLDER,
-    resource_path,
-)
+from LyricBar.config import settings, resource_path
 from LyricBar.backend.lyricmanager import FromSpotify, FromThirdParty, LyricLine, Lyrics, LyricsManager
 from LyricBar.nowplaying import NowPlayingSystem, NowPlayingSpicetify
 from LyricBar.utils.dataclasses import PlayingStatusTrigger
 from LyricBar.themes import STYLES, get_style
 
-
-# class debugQMutex(QMutex):
-#     def tryLock(self, timeout=0):
-#         ret = super().tryLock(timeout)
-#         print("TRY LOCK: ", ret)
-#         return ret
-#     def unlock(self):
-#         print("UNLOCK")
-#         return super().unlock()
+logger = logging.getLogger(__name__)
 
 
 class LyricsMaintainer():
@@ -36,15 +16,14 @@ class LyricsMaintainer():
         self.update_callback = update_callback
 
         self.providers = {}
-        if USE_SPOTIFY_LYRICS:
-            self.providers["Spotify"] = FromSpotify(SP_DC)
-        if THIRD_PARTY_LYRICS_PROVIDERS and THIRD_PARTY_LYRICS_PROVIDERS != []:
-            for provider in THIRD_PARTY_LYRICS_PROVIDERS:
-                self.providers[provider] = FromThirdParty([provider])
-        
+        if settings.use_spotify_lyrics:
+            self.providers["Spotify"] = FromSpotify(settings.sp_dc)
+        for provider in settings.third_party_lyrics_providers:
+            self.providers[provider] = FromThirdParty([provider])
+
         self.manager = LyricsManager(
             providers=self.providers,
-            cache_dir=resource_path(LYRIC_FOLDER),
+            cache_dir=resource_path(settings.lyric_folder),
         )
 
         self.lyrics = None
@@ -81,7 +60,7 @@ class LyricsMaintainer():
                 
             if not self.lyrics:
                 # Inconsistent state: has_lyrics=True but lyrics=None/empty.
-                logging.warning("Inconsistent lyrics state detected - resetting has_lyrics to False")
+                logger.warning("Inconsistent lyrics state detected - resetting has_lyrics to False")
                 self.now_playing.has_lyrics = False
                 return None  # Hide bar instead of showing sync symbol
                 
@@ -110,7 +89,7 @@ class LyricsMaintainer():
                     )
                     
             except Exception as e:
-                logging.error(f"Error getting lyrics line: {e}")
+                logger.error(f"Error getting lyrics line: {e}")
                 # Reset lyrics if corrupted
                 self.lyrics = None
                 self.now_playing.has_lyrics = False
@@ -125,7 +104,7 @@ class LyricsMaintainer():
         """Log why `line` returned None, but only on change, so this doesn't spam
         the console at the 16ms UI refresh rate."""
         if reason != self._last_blocked_reason:
-            logging.info(f"[lyrics display blocked] {reason}")
+            logger.info(f"[lyrics display blocked] {reason}")
             self._last_blocked_reason = reason
     
     def manager_callback(self, value):
@@ -196,13 +175,13 @@ class LyricsMaintainer():
             self.lyrics_mutex.unlock()
             return
         self.lyrics.offset = value
-        # print("LYRIC OFFSET UPDATED: ", self.lyrics.offset)
+        logger.debug("Lyric offset updated: %s", self.lyrics.offset)
         self.manager.save_lyrics(self.lyrics.track, self.lyrics)
         self.lyrics_mutex.unlock()
 
     
     def set_lyrics(self, value, track=None, check_first=False):
-        logging.info(
+        logger.info(
             f"set_lyrics called: value={'Lyrics(%d lines, source=%s)' % (len(value.lines or []), value.source) if value else None}, "
             f"track={track}, current_track={self.now_playing.current_track}"
         )
@@ -210,7 +189,7 @@ class LyricsMaintainer():
             return
         if track is not None:
             if self.now_playing.current_track != track:
-                logging.warning(
+                logger.warning(
                     f"set_lyrics REJECTED: track mismatch. search was for {track!r}, "
                     f"now_playing.current_track is {self.now_playing.current_track!r}"
                 )
@@ -218,13 +197,13 @@ class LyricsMaintainer():
         
         # Use timeout lock to prevent deadlocks
         if not self.lyrics_mutex.tryLock(500):  # Reduced timeout for faster response
-            logging.warning("Could not acquire lyrics mutex in set_lyrics - skipping update")
+            logger.warning("Could not acquire lyrics mutex in set_lyrics - skipping update")
             return
             
         try:
             self.lyrics = value
             if not self.lyrics:
-                logging.info("LYRICS NOT FOUND")
+                logger.info("LYRICS NOT FOUND")
                 self.now_playing.has_lyrics = False
             else:
                 self.now_playing.has_lyrics = True
@@ -232,11 +211,6 @@ class LyricsMaintainer():
                     self.update_callback("Lyrics from " + self.lyrics.source)
         finally:
             self.lyrics_mutex.unlock()
-        # print("SET LYRICS: ", self.now_playing.current_track, self.lyrics is not None)
-
-        
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    lm = LyricsMaintainer()
-    breakpoint()
-    sys.exit(app.exec_())
+        logger.debug(
+            "Lyrics set for %s: %s", self.now_playing.current_track, self.lyrics is not None
+        )

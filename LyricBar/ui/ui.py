@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
 from LyricBar.themes import MINIMAL_THEME_NAMES, get_style, load_themes
 from LyricBar.ui.components.lyriclabel import LyricLabel
 from LyricBar.ui.components.toasttag import ToastTag
-from LyricBar.globalvariables import PLAYING_INFO_PROVIDER, TAKSBAR_HEIGHT, LEFTOUT_WIDTH, SPICETIFY_PORT, resource_path
+from LyricBar.config import settings, resource_path
 from LyricBar.backend.lyricsmaintainer import LyricsMaintainer
 from LyricBar.nowplaying import NowPlayingSpicetify, NowPlayingSystem
 from LyricBar.utils.dataclasses import PlayingStatusTrigger
@@ -117,8 +117,8 @@ class LyricsDisplay(QWidget):
 
         
         self.windowConfig()
-        self.corner_radius = TAKSBAR_HEIGHT // 2
-        self.setFixedHeight(TAKSBAR_HEIGHT)
+        self.corner_radius = settings.taskbar_height // 2
+        self.setFixedHeight(settings.taskbar_height)
         # Enable rounded window masking so no rectangular edge appears outside the bar.
         self.use_masked_corners = True
         
@@ -159,7 +159,7 @@ class LyricsDisplay(QWidget):
         self._resize_corner = None  # 'top-left', 'top-right', 'bottom-left', 'bottom-right'
         self._resize_start_pos = None
         self._resize_start_geometry = None
-        self._base_height = TAKSBAR_HEIGHT  # Store original/max height for scaling
+        self._base_height = settings.taskbar_height  # Store original/max height for scaling
         self._base_width = None  # Will be set after position is determined
         self._scale_factor = 1.0  # Current scale factor
         
@@ -205,8 +205,8 @@ class LyricsDisplay(QWidget):
 
         self.callback_signal.connect(self.maintainer_callback)
         
-        if PLAYING_INFO_PROVIDER == "Spicetify":
-            self.now_playing = NowPlayingSpicetify(socket_port=SPICETIFY_PORT, update_callback=self.callback_signal.emit, offset=120)
+        if settings.playing_info_provider == "Spicetify":
+            self.now_playing = NowPlayingSpicetify(socket_port=settings.spicetify_port, update_callback=self.callback_signal.emit, offset=120)
         else:
             # Reduced sync_interval from 100ms to 50ms for faster lyric updates (less delay)
             self.now_playing = NowPlayingSystem(update_callback=self.callback_signal.emit, sync_interval=50, offset=0)
@@ -300,7 +300,6 @@ class LyricsDisplay(QWidget):
                     self._console_visible = True
                     print("🖥️  LyricBar Debug Console Activated!")
                     print("📊 Live logging enabled - you'll see all debug info here")
-                    print("🎮 GPU: RTX 4050 Detected")
                     print("=" * 60)
                     
                     # Reconfigure existing logging handlers to use the console
@@ -428,8 +427,8 @@ class LyricsDisplay(QWidget):
         screen_top = screen.geometry().top()
         screen_left = screen.geometry().left()
         
-        width = screen_width - 2 * LEFTOUT_WIDTH
-        height = TAKSBAR_HEIGHT
+        width = screen_width - 2 * settings.leftout_width
+        height = settings.taskbar_height
         x = (screen_width - width) // 2
         
         # Store base/max dimensions for resize limits
@@ -492,17 +491,15 @@ class LyricsDisplay(QWidget):
     
     def loadThemeSettings(self):
         """Load saved theme preference"""
-        settings = QSettings("LyricBar", "WindowSettings")
-        saved_theme = settings.value("theme", None)
+        qsettings = QSettings("LyricBar", "WindowSettings")
+        saved_theme = qsettings.value("theme", None)
         if saved_theme in MINIMAL_THEME_NAMES:
-            from .. import globalvariables
-            globalvariables.DEFAULT_THEME = saved_theme
-    
+            settings.default_theme = saved_theme
+
     def saveThemeSettings(self):
         """Save theme preference"""
-        settings = QSettings("LyricBar", "WindowSettings")
-        from .. import globalvariables
-        settings.setValue("theme", globalvariables.DEFAULT_THEME)
+        qsettings = QSettings("LyricBar", "WindowSettings")
+        qsettings.setValue("theme", settings.default_theme)
     
     def closeEvent(self, event):
         """Handle window close"""
@@ -1093,12 +1090,8 @@ class SystemTrayIcon(QSystemTrayIcon):
     def openSettings(self):
         """Open the settings dialog"""
         from .components.settingsdialog import SettingsDialog
-        from ..globalvariables import resource_path
-        
-        # Get settings file path - use resource_path to handle both dev and exe
-        settings_path = resource_path("settings.yaml")
-        
-        dialog = SettingsDialog(parent=self.parent, settings_path=settings_path)
+
+        dialog = SettingsDialog(parent=self.parent)
         dialog.settings_changed.connect(self.onSettingsChanged)
         dialog.exec_()
 
@@ -1107,12 +1100,20 @@ class SystemTrayIcon(QSystemTrayIcon):
             self.openSettings()
     
     def onSettingsChanged(self, changes):
-        """Handle settings changes"""
-        from .. import globalvariables
-        import importlib
+        """Handle settings changes.
 
+        NOTE: this used to call `importlib.reload(globalvariables)` then
+        `importlib.reload(lyricmanager)` here. Reloading a module re-runs its
+        top-level code and creates brand-new class objects -- any code
+        already holding a reference to the *old* `LyricsManager` class (e.g.
+        a running QThread) would silently stop being `isinstance` of the
+        reloaded class, and in-flight lyric fetches could end up orphaned.
+        It's no longer needed: `SettingsDialog.save_settings()` already wrote
+        through to the single shared `settings` object via
+        `settings.update_and_persist(...)`, so every module that reads
+        `settings.<field>` already sees the new values -- nothing to reload.
+        """
         if changes.get("progress_bar_changed"):
-            globalvariables.SHOW_PROGRESS_BAR = changes.get("progress_bar", globalvariables.SHOW_PROGRESS_BAR)
             self.parent.updateStyle(get_style(self.parent.now_playing.current_track), force_reload=True)
             self.parent.toast("Progress bar updated")
 
@@ -1122,16 +1123,9 @@ class SystemTrayIcon(QSystemTrayIcon):
                 self.parent.toast("Tracking apps updated")
 
         if changes.get("theme_changed"):
-            globalvariables.DEFAULT_THEME = changes.get("theme", globalvariables.DEFAULT_THEME)
             self.parent.saveThemeSettings()
             self.parent.updateStyle(get_style(self.parent.now_playing.current_track), force_reload=True)
-            self.parent.toast(f"Theme: {globalvariables.DEFAULT_THEME}")
-
-        if changes.get("provider_changed") or changes.get("timing_offset_changed") or changes.get("tracking_apps_changed"):
-            importlib.reload(globalvariables)
-            from ..backend import lyricmanager
-
-            importlib.reload(lyricmanager)
+            self.parent.toast(f"Theme: {settings.default_theme}")
 
         if changes.get("provider_changed"):
             self.parent.toast("Provider changed. Restart LyricBar to apply.")
@@ -1232,34 +1226,14 @@ def main():
     
     app = QApplication(sys.argv)
     
-    # Detect GPU using Windows tools
+    # Detect GPU without failing startup when the Windows probing tools are
+    # unavailable or noisy on the host.
     try:
-        import subprocess
-        # Use wmic to detect GPU (hide console window)
-        result = subprocess.run(['wmic', 'path', 'win32_VideoController', 'get', 'name'], 
-                              capture_output=True, text=True, timeout=5,
-                              creationflags=subprocess.CREATE_NO_WINDOW)
-        if result.returncode == 0:
-            gpus = [line.strip() for line in result.stdout.split('\n') if line.strip() and 'Name' not in line]
-            for gpu in gpus:
-                if gpu:
-                    logging.info(f"🎮 Detected GPU: {gpu}")
-                    if 'nvidia' in gpu.lower() or 'rtx' in gpu.lower():
-                        logging.info("✅ NVIDIA RTX GPU available!")
-                    elif 'intel' in gpu.lower():
-                        logging.info("ℹ️  Intel integrated GPU available")
-                    elif 'amd' in gpu.lower() or 'radeon' in gpu.lower():
-                        logging.info("ℹ️  AMD GPU available")
-        
-        # Check if NVIDIA GPU is active by looking for nvidia processes (hide console window)
-        nvidia_result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq nvidia*'], 
-                                     capture_output=True, text=True, timeout=3,
-                                     creationflags=subprocess.CREATE_NO_WINDOW)
-        if nvidia_result.returncode == 0 and 'nvidia' in nvidia_result.stdout.lower():
-            logging.info("✅ NVIDIA processes detected - RTX 4050 likely active!")
-        
-    except Exception as e:
-        logging.info(f"ℹ️  GPU detection using system tools failed: {e}")
+        from LyricBar.utils.gpu import log_gpu_status
+
+        log_gpu_status()
+    except Exception as exc:
+        logging.info("ℹ️  GPU detection failed: %s", exc)
         logging.info("ℹ️  Make sure to set LyricBar to 'High Performance' in Windows Graphics Settings")
     
     # Set smooth rendering hints
