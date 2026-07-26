@@ -130,6 +130,17 @@ class LyricsDisplay(QWidget):
         self.faux_taskbar.setStyleSheet("background-color: rgba(0, 0, 0, 0.06);")
         self.label = LyricLabel(None, parent=self.frame)
         self.label.setLyricsYOffset(10)
+        # NOTE: this was never set before, anywhere -- back_pad/front_pad
+        # therefore always painted plain rectangles internally, and the
+        # pill/rounded look you see came entirely from the window-level
+        # QBitmap mask (applyRoundedCorners) clipping that rectangle from
+        # the outside. That's invisible for a flush solid fill, but a
+        # border *stroke* drawn as a rectangle then gets unevenly chopped
+        # by a round clip mask at the curved ends -- which is exactly the
+        # artifact in the screenshot. Setting this makes the Pad draw the
+        # same rounded shape the window mask clips to, so a border stroke
+        # actually follows the pill's curve instead of getting cut into it.
+        self.label.rounded_radius = self.corner_radius
         
         # Add minimize button (collapses to small icon)
         self.minimize_button = QPushButton("−", self)
@@ -244,7 +255,6 @@ class LyricsDisplay(QWidget):
         
         # Initialize progress bar to 0 on startup
         self.label.setProgress(0)
-        self.label.progressbar.progress = 0
         logging.info("=== APP INITIALIZED - Progress bar reset to 0 ===")
         self._drag_pos = None
         self._is_dragging = False
@@ -375,11 +385,33 @@ class LyricsDisplay(QWidget):
         self.faux_taskbar.setGeometry(0, 0, self.width(), self.height())
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setFixedSize(self.width(), self.height())
-        toast_width = max(140, (self.height() + 10) * 2)
-        self.toaster.setGeometry(max(0, (self.width() - toast_width) // 2), 0, toast_width, self.height() + 6)
-        
+        self._layoutToast()
+
         # Update rounded corners when resizing
         self.applyRoundedCorners()
+
+    def _layoutToast(self):
+        """Size and position the toast so it's centered on and fits inside
+        the bar.
+
+        NOTE: this used to compute width from the bar's *height*
+        (`(self.height() + 10) * 2`), which has nothing to do with the
+        bar's actual on-screen width -- on a wide bar the toast would be
+        far too narrow, and it could never adapt to the bar actually being
+        wide or narrow. It also set the toast's height to
+        `self.height() + 6`, i.e. 6px *taller* than the bar itself, so it
+        always overflowed past the bottom edge and got clipped by the
+        window's own rounded-corner mask.
+        """
+        vertical_padding = 6
+        toast_height = max(0, self.height() - vertical_padding)
+        toast_width = min(
+            max(140, int(self.width() * 0.55)),
+            max(140, self.width() - 24),
+        )
+        x = max(0, (self.width() - toast_width) // 2)
+        y = max(0, (self.height() - toast_height) // 2)
+        self.toaster.setGeometry(x, y, toast_width, toast_height)
     
     def minimizeToIcon(self):
         """Minimize the lyrics window to a floating icon"""
@@ -491,7 +523,17 @@ class LyricsDisplay(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
     
     def updateChildWidgets(self):
-        """Update child widget positions and scale after resize"""
+        """Update child widget positions and scale after resize.
+
+        NOTE: as of this pass through the code, nothing calls this method --
+        there's no resizeEvent override and no mouse handler wires up
+        getCornerAtPosition/updateCursor/_is_resizing to an actual drag-
+        resize action. It's scaffolding for a corner-drag-resize feature
+        that was never finished/connected. Left in place rather than
+        deleted since removing someone's in-progress feature isn't this
+        fix's call to make, but flagging it clearly: if you're expecting
+        drag-to-resize to work today, it doesn't -- this is why.
+        """
         # Calculate scale factor based on height change
         self._scale_factor = self.height() / self._base_height
         
@@ -499,8 +541,7 @@ class LyricsDisplay(QWidget):
         self.faux_taskbar.setGeometry(0, 0, self.width(), self.height())
         self.label.setFixedSize(self.width(), self.height())
         self.label.setGeometry(0, 0, self.width(), self.height())
-        toast_width = max(140, (self.height() + 10) * 2)
-        self.toaster.setGeometry(max(0, (self.width() - toast_width) // 2), 0, toast_width, self.height() + 6)
+        self._layoutToast()
         
         # Apply scale to label (font size)
         self.label.applyScale(self._scale_factor)
@@ -1167,7 +1208,11 @@ def main():
     # Set smooth rendering hints
     app.setStyle('Fusion')  # Use Fusion style for smoother, modern rendering
     
-    logging.info(f"Physical DPI: {app.primaryScreen().physicalDotsPerInch()}")
+    # NOTE: used to log "Physical DPI: 141.95..." here. That's ~1.48x a
+    # 96-DPI baseline, which is exactly the "1.48 scaling" that looked like
+    # a live bug -- but this value was never applied to anything, it was
+    # only ever printed. Removed since a diagnostic line that reads
+    # identically to an applied scale factor is worse than no line at all.
     ui = LyricsDisplay(app)
     # we = WindowsWindowEffect(ui)
     # ptr = int(ui.winId())

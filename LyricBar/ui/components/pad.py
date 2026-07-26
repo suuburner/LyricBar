@@ -40,7 +40,11 @@ class Pad(QLabel):
             and self.border_color.alpha() > 0
         )
 
-        full_rect = QRectF(self.rect())
+        # Match the window mask's own convention (applyRoundedCorners insets
+        # by 1px to avoid an antialiasing sliver at the very edge) so this
+        # pad's rounded shape -- and any border stroke on it -- lines up
+        # exactly with the mask clipping it from outside, not just roughly.
+        full_rect = QRectF(0, 0, max(0.0, self.width() - 1), max(0.0, self.height() - 1))
 
         if has_border:
             # Robust border technique: fill the full outer shape with the

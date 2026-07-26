@@ -1,6 +1,6 @@
 from datetime import datetime
 from LyricBar.ui.components.utils import convert_to_color
-from LyricBar.ui.components.progressbar import ProgressBar
+from LyricBar.ui.components.progressring import ProgressRing
 from LyricBar.ui.components.pad import Pad
 from LyricBar.ui.components.outlinedlabel import OutlinedLabel
 from PyQt5.QtWidgets import QLabel
@@ -141,8 +141,7 @@ class LyricLabel(OutlinedLabel):
         self.front_pad = Pad(QBrush(QColor(0,0,0,0)), parent=parent)
         self.front_pad.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        self.progressbar = ProgressBar(parent=parent)
-        self.progressbar_offset = 0
+        self.progress_ring = ProgressRing(parent=parent)
         
         # Create separate timestamp labels with independent height
         self.timestamp_left = QLabel("0:00", parent=parent)
@@ -155,13 +154,6 @@ class LyricLabel(OutlinedLabel):
         
         self.glow_color = QColor(0, 0, 0, 200)
         
-        # Removed glow effect for better performance
-        # glow = QGraphicsDropShadowEffect()
-        # glow.setColor(self.glow_color)
-        # glow.setBlurRadius(15)
-        # glow.setOffset(0, 0)
-        # self.progressbar.setGraphicsEffect(glow)
-
         self.setStyle(**kwargs)
         
         self.back_pad.show()
@@ -169,6 +161,8 @@ class LyricLabel(OutlinedLabel):
         self.show()
         self.front_pad.show()
         self.front_imagepad.show()
+        self.progress_ring.show()
+        self.progress_ring.raise_()
         
     @pyqtProperty(float)
     def rounded_radius(self):
@@ -178,17 +172,16 @@ class LyricLabel(OutlinedLabel):
     def rounded_radius(self, value):
         self._rounded_radius = value
         if value > 0:
-            # self.pad.setStyleSheet(f"border-radius: {value}px;")
-            # self.imagepad.setStyleSheet(f"border-radius: {value}px;")
             self.back_pad.rounded_radius = value
             self.front_pad.rounded_radius = value
+            self.progress_ring.rounded_radius = value
         else:
-            # self.pad.setStyleSheet("")
-            # self.imagepad.setStyleSheet("")
             self.back_pad.rounded_radius = 0
             self.front_pad.rounded_radius = 0
+            self.progress_ring.rounded_radius = 0
         self.back_pad.update()
         self.front_pad.update()
+        self.progress_ring.update()
         
     
     @pyqtProperty(float)
@@ -211,50 +204,36 @@ class LyricLabel(OutlinedLabel):
         self.back_imagepad.setGeometry(0, 0, width, height)
         self.front_pad.setGeometry(0, 0, width, height)
         self.front_imagepad.setGeometry(0, 0, width, height)
+        self.progress_ring.setGeometry(0, 0, width, height)
 
-        # Progress bar: compact and understated.
-        bar_width = 320
-        bar_height = 6
-        bar_y = self.height() - 10 + self.progressbar_offset
-        bar_x = (self.width() - bar_width) // 2
-        self.progressbar.setGeometry(bar_x, bar_y, bar_width, bar_height)
-        
-        # Timestamp labels: small and unobtrusive.
+        # Timestamps now live tucked into the pill's rounded end-caps
+        # (the corner space lyric text doesn't reach) rather than flanking
+        # a separate linear bar -- the ring itself is the progress display.
         timestamp_height = 14
-        timestamp_y = bar_y - (timestamp_height - bar_height) // 2
-        # Ensure timestamps remain fully visible when rounded window mask is enabled.
-        timestamp_y = min(timestamp_y, self.height() - timestamp_height)
-        
-        # Left timestamp.
-        self.timestamp_left.setGeometry(bar_x - 48, timestamp_y, 44, timestamp_height)
-        
-        # Right timestamp.
-        self.timestamp_right.setGeometry(bar_x + bar_width + 4, timestamp_y, 44, timestamp_height)
-        
+        timestamp_width = 44
+        timestamp_y = (height - timestamp_height) // 2
+        end_cap_margin = int(max(6, self.rounded_radius // 2))
+
+        self.timestamp_left.setGeometry(end_cap_margin, timestamp_y, timestamp_width, timestamp_height)
+        self.timestamp_right.setGeometry(
+            width - end_cap_margin - timestamp_width, timestamp_y, timestamp_width, timestamp_height
+        )
+
     def move(self, x, y):
         super().move(x, y)
         self.back_pad.move(x, y)
         self.back_imagepad.move(x, y)
         self.front_pad.move(x, y)
         self.front_imagepad.move(x, y)
-        
-        # Progress bar: centered and compact.
-        bar_width = 320
-        bar_height = 6
-        bar_y = y + self.height() - 10 + self.progressbar_offset
-        bar_x = x + (self.width() - bar_width) // 2
-        self.progressbar.move(bar_x, bar_y)
-        
-        # Timestamp labels: small and unobtrusive.
+        self.progress_ring.move(x, y)
+
         timestamp_height = 14
-        timestamp_y = bar_y - (timestamp_height - bar_height) // 2
-        timestamp_y = min(timestamp_y, y + self.height() - timestamp_height)
-        
-        # Left timestamp.
-        self.timestamp_left.move(bar_x - 48, timestamp_y)
-        
-        # Right timestamp.
-        self.timestamp_right.move(bar_x + bar_width + 4, timestamp_y)
+        timestamp_width = 44
+        timestamp_y = y + (self.height() - timestamp_height) // 2
+        end_cap_margin = int(max(6, self.rounded_radius // 2))
+
+        self.timestamp_left.move(x + end_cap_margin, timestamp_y)
+        self.timestamp_right.move(x + self.width() - end_cap_margin - timestamp_width, timestamp_y)
         
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -265,11 +244,11 @@ class LyricLabel(OutlinedLabel):
         super().setHidden(hidden)
         self.front_pad.setHidden(hidden)
         self.front_imagepad.setHidden(hidden)
-        self.progressbar.setHidden(hidden)
+        self.progress_ring.setHidden(hidden)
             
     def setStyle(self, **kwargs):
         show_progress = kwargs.get("progress-visible", True)
-        self.progressbar.setVisible(show_progress)
+        self.progress_ring.setVisible(show_progress)
         self.timestamp_left.setVisible(show_progress)
         self.timestamp_right.setVisible(show_progress)
 
@@ -334,11 +313,9 @@ class LyricLabel(OutlinedLabel):
             self.back_pad.setBorder(None, 0)
 
         if "progress-color" in kwargs:
-            self.progressbar.progress_color = convert_to_color(kwargs["progress-color"])
-        elif "font-image" in kwargs:
-            self.progressbar.progress_color = QPixmap(resource_path(kwargs["font-image"]))
+            self.progress_ring.color = convert_to_color(kwargs["progress-color"])
         elif "font-color" in kwargs:
-            self.progressbar.progress_color = convert_to_color(kwargs["font-color"])
+            self.progress_ring.color = convert_to_color(kwargs["font-color"])
         
         # Set timestamp label colors from theme (priority: font-color > line-color > shadow-color)
         if "font-color" in kwargs:
@@ -368,12 +345,11 @@ class LyricLabel(OutlinedLabel):
                 self.timestamp_left.setStyleSheet(style)
                 self.timestamp_right.setStyleSheet(style)
             
-        if "progress-line-color" in kwargs:
-            self.progressbar.line_color = convert_to_color(kwargs["progress-line-color"])
-        elif "line-color" in kwargs and ("line-width" not in kwargs or kwargs["line-width"] > 0):
-            self.progressbar.line_color = convert_to_color(kwargs["line-color"])
-        else:
-            self.progressbar.line_color = QColor(0,0,0,0)
+        # NOTE: the ring has no separate "track" color to wire up like the
+        # old linear ProgressBar did (progress-line-color/line-color) -- it
+        # draws directly over the bar's own border, which is already
+        # theme-colored, so the border itself doubles as the ring's track.
+        self.progress_ring.thickness = float(kwargs.get("border-width", 2.5)) + 0.5
             
         if "use-shadow" in kwargs and kwargs["use-shadow"]:
             glow = QGraphicsDropShadowEffect()
@@ -502,8 +478,7 @@ class LyricLabel(OutlinedLabel):
             self.animation = None
             
     def setProgress(self, progress, current_ms=0, total_ms=0):
-        self.progressbar.progress = progress
-        self.progressbar.update()  # Force repaint for smooth 60 FPS updates
+        self.progress_ring.setProgress(progress)
         
         # Update timestamp labels
         if total_ms > 0:
