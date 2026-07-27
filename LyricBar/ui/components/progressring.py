@@ -1,21 +1,25 @@
 from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt5.QtCore import QRectF, Qt
 from PyQt5.QtWidgets import QLabel
+import math
 
 
 class ProgressRing(QLabel):
     """Traces a thin line around the bar's own rounded-rect border, filling
-    in clockwise from the top-left as the song plays -- instead of a
+    in anti-clockwise from the top-left as the song plays -- instead of a
     separate linear bar sitting inside the lyrics text.
 
-    `QPainterPath.addRoundedRect` starts its path at the top edge, just past
-    the top-left corner, and always winds clockwise -- which is exactly the
-    "starts top-left, goes clockwise" behavior wanted, with no manual angle
-    math needed. `pointAtPercent(t)` samples the path by *fraction of actual
-    path length*, not by angle, so progress moves at a constant visual speed
-    along straight edges and around corners alike (a naive QConicalGradient
-    approach would instead move at a constant *angular* speed around the
-    rect's center, which looks very uneven on a wide, short pill shape).
+    `QPainterPath.addRoundedRect`'s path actually starts at the middle of
+    the *left* edge (verified empirically, not at the top-left as originally
+    assumed) and winds clockwise as t increases. `start_offset` below shifts
+    the reference point to the true top-left, and sampling t in the
+    *decreasing* direction from there traces anti-clockwise (left edge,
+    then bottom, then right, then back across the top). `pointAtPercent(t)`
+    samples by *fraction of actual path length*, not by angle, so progress
+    moves at a constant visual speed along straight edges and around
+    corners alike (a naive QConicalGradient approach would instead move at
+    a constant *angular* speed around the rect's center, which looks very
+    uneven on a wide, short pill shape).
     """
 
     def __init__(self, parent=None, color=QColor(255, 255, 255, 220), thickness=2.5):
@@ -52,13 +56,34 @@ class ProgressRing(QLabel):
         if total_length <= 0:
             return
 
+        # QPainterPath.addRoundedRect's path doesn't actually start at the
+        # top-left -- it starts at the middle of the left edge (the bottom
+        # end of the top-left corner's arc), verified empirically. The true
+        # top-left point (top edge, just past that corner) sits one quarter-
+        # circle of arc length further along the same path. Pulling back a
+        # further fixed few pixels of arc length (CORNER_PULLBACK_PX) lands
+        # the actual start a bit before that flat-edge transition, still on
+        # the curve -- a purely aesthetic nudge, not the literal corner-end
+        # point. percentAtLength converts a fixed physical arc length into
+        # the right fraction regardless of this widget's actual size, and
+        # this is 0 when radius is 0 (square corners, nothing to pull back
+        # into).
+        CORNER_PULLBACK_PX = 6
+        arc_to_corner_end = max(0.0, (math.pi / 2) * radius - CORNER_PULLBACK_PX)
+        start_offset = full_path.percentAtLength(arc_to_corner_end) if radius > 0 else 0.0
+
         # Sample the revealed portion of the path as a polyline. Capped
         # sample count keeps this cheap even during frequent progress-tick
         # repaints, regardless of how long the actual path is.
+        # Anti-clockwise: decreasing t from the top-left start offset traces
+        # down the left edge, across the bottom, up the right side, and back
+        # across the top to close the loop -- verified empirically, since
+        # QPainterPath's own winding direction (increasing t) is clockwise.
         num_samples = max(2, min(300, int(300 * self.progress) + 2))
         reveal_path = QPainterPath()
         for i in range(num_samples):
-            t = self.progress * i / (num_samples - 1)
+            s = self.progress * i / (num_samples - 1)
+            t = (start_offset - s) % 1.0
             point = full_path.pointAtPercent(t)
             if i == 0:
                 reveal_path.moveTo(point)

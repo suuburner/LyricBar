@@ -92,6 +92,11 @@ class OutlinedLabel(QLabel):
         
         self.right_pad = False  
         self.use_scale = True
+        # Reserved space on each side that the fit-to-width scaling below
+        # should not render into (e.g. the timestamp end-caps) -- text still
+        # never gets cropped, it just scales down enough to clear this
+        # margin instead of only clearing the label's full raw width.
+        self.horizontal_margin = 0
 
         self.setBrush(brushcolor)
         self.setPen(linecolor)
@@ -433,8 +438,9 @@ class OutlinedLabel(QLabel):
             qp.strokePath(self.path, self.pen)
         qp.fillPath(self.path, self.brush)
         qp.end()
-        if self.qmap.width() > self.width() and self.use_scale:
-            scale = min(self.width() / self.qmap.width(), self.height() / self.qmap.height())
+        available_width = max(1, self.width() - 2 * self.horizontal_margin)
+        if self.qmap.width() > available_width and self.use_scale:
+            scale = min(available_width / self.qmap.width(), self.height() / self.qmap.height())
             self.qmap = self.qmap.scaled(int(self.qmap.width() * scale), int(self.qmap.height() * scale), aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio, transformMode=Qt.SmoothTransformation)
         self.path_mutex.unlock()
         self.qmap_mutex.unlock()
@@ -515,3 +521,13 @@ class OutlinedLabel(QLabel):
         self._lyrics_offset = offset
         self.updatePath()
 
+    def setHorizontalMargin(self, margin):
+        """Reserve `margin` px on each side that fitted text should scale
+        down to avoid, rather than render into (e.g. the timestamp
+        end-caps). Text is never cropped either way -- this only changes
+        how much it shrinks to fit."""
+        if margin == self.horizontal_margin:
+            return
+        self.horizontal_margin = margin
+        if self.qmap is not None:
+            self.updatePixmap()

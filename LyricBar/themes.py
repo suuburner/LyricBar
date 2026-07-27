@@ -201,6 +201,41 @@ def load_themes():
     logger.info("Loaded %d themes.", loaded_count)
 
 
+def _with_alpha(hex_color, alpha_hex):
+    """Append an alpha suffix to a plain #rrggbb (or #rgb/#rrggbbaa) hex
+    string, used to turn an accent color into a suitably translucent
+    border color -- same convention the 4 minimal themes already use by
+    hand (e.g. Soft's "#7a7f8a99")."""
+    if not isinstance(hex_color, str) or not hex_color.startswith("#"):
+        return hex_color
+    base = hex_color[1:]
+    if len(base) in (3, 6):
+        return f"#{base}{alpha_hex}"
+    if len(base) == 8:
+        return f"#{base[:6]}{alpha_hex}"
+    return hex_color
+
+
+def _fill_accent_fallbacks(style, source):
+    """If this specific theme (not the shared generic base every theme
+    starts from) didn't explicitly set progress-color/border-color, derive
+    them from its own accent color -- line-color, or font-color if it has
+    no line-color -- instead of silently leaving the generic shared
+    default (#a8a8a8, no border at all) in place. Without this, every
+    theme that doesn't happen to override these two fields renders an
+    identical flat-gray ring with no border, regardless of that theme's
+    actual palette.
+    """
+    accent = source.get("line-color") or source.get("font-color")
+    if accent is None:
+        return
+    if "progress-color" not in source:
+        style["progress-color"] = accent
+    if "border-color" not in source:
+        style["border-color"] = _with_alpha(accent, "99")
+        style.setdefault("border-width", 1.5)
+
+
 def get_style(track: TrackInfo):
     cache_key = None
     if track is not None:
@@ -226,6 +261,7 @@ def get_style(track: TrackInfo):
         style.update(default_style)
         if "format" in default_style:
             style["format"] = _compose_format(STYLES["default"]["format"], default_style["format"])
+        _fill_accent_fallbacks(style, default_style)
 
     if track is not None:
         for name, candidate in STYLES.items():
@@ -238,6 +274,7 @@ def get_style(track: TrackInfo):
                     style["format"] = _compose_format(STYLES["default"]["format"], candidate["format"])
                 if "font-family" in candidate:
                     style["font-family"] = _normalize_font_family(candidate["font-family"])
+                _fill_accent_fallbacks(style, candidate)
                 break
 
     if "background-color" not in style or style.get("use-dynamic-bg", False):
@@ -247,7 +284,15 @@ def get_style(track: TrackInfo):
         if "color" in key and isinstance(value, str) and re.match(r"^#[0-9a-fA-F]{3}([0-9a-fA-F]{3,5})?$", value):
             style[key] = hex_to_rgba(value)
 
-    style = _normalize_minimal_style(style)
+    # NOTE: this used to run unconditionally on every style, artist themes
+    # included -- it force-overwrites font-family/font-size/font-weight/
+    # shadow settings with no fallback check (unlike the color fields here,
+    # which use .get() and only fill in if absent), so every artist theme's
+    # own font and shadow config was being silently clobbered by whatever
+    # the 4 minimal themes use. Gating it to only the styles it's actually
+    # meant for.
+    if style_name in MINIMAL_THEME_NAMES:
+        style = _normalize_minimal_style(style)
 
     style["name"] = style_name
     style["progress-visible"] = settings.show_progress_bar

@@ -81,9 +81,9 @@ class SettingsDialog(QDialog):
             self.theme_combo.setCurrentIndex(0)
         form.addRow("Theme", self.theme_combo)
 
-        self.progress_checkbox = QCheckBox("Show progress bar")
+        self.progress_checkbox = QCheckBox("Show progress ring")
         self.progress_checkbox.setChecked(bool(settings.show_progress_bar))
-        form.addRow("Progress", self.progress_checkbox)
+        form.addRow("Progress ring", self.progress_checkbox)
 
         self.tracking_apps = QLineEdit()
         tracking_app = settings.tracking_app

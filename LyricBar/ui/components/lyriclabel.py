@@ -206,18 +206,25 @@ class LyricLabel(OutlinedLabel):
         self.front_imagepad.setGeometry(0, 0, width, height)
         self.progress_ring.setGeometry(0, 0, width, height)
 
-        # Timestamps now live tucked into the pill's rounded end-caps
-        # (the corner space lyric text doesn't reach) rather than flanking
-        # a separate linear bar -- the ring itself is the progress display.
-        timestamp_height = 14
-        timestamp_width = 44
+        # Timestamps live tucked into the pill's rounded end-caps (the
+        # corner space lyric text doesn't reach) rather than flanking a
+        # separate linear bar -- the ring itself is the progress display.
+        timestamp_height = 12
+        timestamp_width = 40
+        edge_gap = 4  # tight to the very edge, not floating inward
         timestamp_y = (height - timestamp_height) // 2
-        end_cap_margin = int(max(6, self.rounded_radius // 2))
+        end_cap_margin = int(max(4, self.rounded_radius // 3)) + edge_gap
 
         self.timestamp_left.setGeometry(end_cap_margin, timestamp_y, timestamp_width, timestamp_height)
         self.timestamp_right.setGeometry(
             width - end_cap_margin - timestamp_width, timestamp_y, timestamp_width, timestamp_height
         )
+
+        # Reserve the same footprint (plus a small breathing gap) from the
+        # lyric text's own fit-to-width scaling, so a long line shrinks
+        # enough to clear the timestamps instead of rendering flush to the
+        # bar's raw edges. Text is never cropped -- it just scales smaller.
+        self.setHorizontalMargin(end_cap_margin + timestamp_width + 6)
 
     def move(self, x, y):
         super().move(x, y)
@@ -227,10 +234,11 @@ class LyricLabel(OutlinedLabel):
         self.front_imagepad.move(x, y)
         self.progress_ring.move(x, y)
 
-        timestamp_height = 14
-        timestamp_width = 44
+        timestamp_height = 12
+        timestamp_width = 40
+        edge_gap = 4
         timestamp_y = y + (self.height() - timestamp_height) // 2
-        end_cap_margin = int(max(6, self.rounded_radius // 2))
+        end_cap_margin = int(max(4, self.rounded_radius // 3)) + edge_gap
 
         self.timestamp_left.move(x + end_cap_margin, timestamp_y)
         self.timestamp_right.move(x + self.width() - end_cap_margin - timestamp_width, timestamp_y)
@@ -340,7 +348,7 @@ class LyricLabel(OutlinedLabel):
                 font_size = kwargs.get("font-size", "30px")
                 font_family = kwargs.get("font-family", "Arial, sans-serif")
                 # Keep timestamps smaller than lyrics but still readable.
-                timestamp_size = max(12, int(float(font_size.replace("px", "")) * 0.85))
+                timestamp_size = max(10, int(float(font_size.replace("px", "")) * 0.85) - 2)
                 style = f"background-color: transparent; color: {color_str}; font-size: {timestamp_size}px; font-family: {font_family};"
                 self.timestamp_left.setStyleSheet(style)
                 self.timestamp_right.setStyleSheet(style)
