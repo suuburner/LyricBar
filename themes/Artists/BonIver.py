@@ -18,7 +18,7 @@ STYLES = {
         "font-color": "#ffffff",
         "font-family": "Times New Roman, sans-serif, Gadugi",
         # "font-family": "Helvetica",
-        "font-size": "30px",
+        "font-size": "21px",
         
         "line-width": 0,
         

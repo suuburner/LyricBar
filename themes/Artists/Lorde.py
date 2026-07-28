@@ -18,7 +18,7 @@ STYLES = {
         "background-image": "images/melodrama.png",
         "font-family": "Canela Light Trial, Arial, sans-serif",
         "font-color": "#f7c059",
-        "font-size": "33px",
+        "font-size": "22px",
         
         "line-width": 0,
         
@@ -30,7 +30,7 @@ STYLES = {
         "background-color": "qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #000000, stop:0.4 #1a1a1a, stop:0.6 #1a1a1a, stop:1 #000000)",
 
         "font-family": "Futura, Arial, sans-serif",
-        "font-size": "25px",
+        "font-size": "20px",
         "font-color": "qlineargradient(spread:pad, x1:0, y1:0.5, x2:1, y2:0.5, stop:0 #ffffff, stop:0.9 #ffffff, stop:1 #b7b5b6)",
         
         "line-width": 0,

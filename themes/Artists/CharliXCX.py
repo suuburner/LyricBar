@@ -6,7 +6,7 @@ STYLES = {
         "font-color": "#000000",
         # "font-family": "Arial Narrow",
         "font-family": "Superstar M54, Arial Narrow, Arial, sans-serif",
-        "font-size": "30px",
+        "font-size": "21px",
         "font-weight": "light",
         
         "line-color": "#000000",
@@ -26,7 +26,7 @@ STYLES = {
         
         "font-color": "#000000",
         "font-family": "CCBiffBamBoom, Arial Narrow, Arial, sans-serif",
-        "font-size": "35px",
+        "font-size": "22px",
         "font-weight": "bold",
         
         "line-color": "#000000aa",
@@ -44,7 +44,7 @@ STYLES = {
         # "font-color": "#1640be",
         "font-color": "qlineargradient(spread:pad, x1:0, y1:0, x2:0, y2:1, stop:0 #1640be, stop:1 #7d92d3)",
         "font-family": "Onyx BT",
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-color": "#9aa8d3",
         "line-width": 0,
@@ -62,7 +62,7 @@ STYLES = {
         "progress-line-color": "#00000000",
         
         "font-family": "NeoNeon",
-        "font-size": "33px",
+        "font-size": "22px",
         
         "line-width": 0.25,
         "line-color": "#9f93cc",
@@ -79,7 +79,7 @@ STYLES = {
 
         "font-color": "#0000000099",
         "font-family": "Rawhide Raw 2012",
-        "font-size": "27px",
+        "font-size": "20px",
         
         "line-color": "#e3e3e3",
         "line-width": 1.1,

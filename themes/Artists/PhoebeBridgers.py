@@ -3,7 +3,7 @@ STYLES = {
         "background-image": "images/phoebebridgers.png",
         # "font-family": "Garamond",
         "font-family": "Garamond, Arial, sans-serif",
-        "font-size": "35px",
+        "font-size": "22px",
         
         "progress-line-color": "#00000000",
         

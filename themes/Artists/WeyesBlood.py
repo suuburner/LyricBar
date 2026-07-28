@@ -4,7 +4,7 @@ STYLES = {
         # "font-family": "Eckmann",
         "font-family": "Eckmann, Arial, sans-serif",
         "font-color": "#f8e3da55",
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-color": "#dd6678",
         "line-width": 1,

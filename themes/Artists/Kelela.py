@@ -3,7 +3,7 @@ STYLES = {
         "background-image": "images/raven.png",
         
         "font-family": "Engravers MT, Arial, sans-serif",
-        "font-size": "30px",
+        "font-size": "21px",
         "font-color": "#1e1e1eaa",
         
         "line-color": "#1e1e1eaa",

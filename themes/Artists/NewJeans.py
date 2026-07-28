@@ -4,7 +4,7 @@ STYLES = {
         
         # "font-family": "Binggrae",
         "font-family": "Binggrae, Arial, sans-serif",
-        "font-size": "35px",
+        "font-size": "22px",
         "font-color": "#b6d6ed",
         
         "line-color": "#364551",

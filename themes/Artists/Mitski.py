@@ -21,7 +21,7 @@ STYLES = {
         # "font-family": "Laurel Hell Hand2",
     "font-family": "Script, serif",
         "font-color": "#ffffff",
-        "font-size": "35px",
+        "font-size": "22px",
         
         "line-width": 0,
         
@@ -36,7 +36,7 @@ STYLES = {
         
         # "font-family": "SantoroScriptJF",
     "font-family": "Script, serif",
-        "font-size": "40px",
+        "font-size": "23px",
         "font-color": "#00000000",
         
         "line-width": 0.75,
@@ -54,7 +54,7 @@ STYLES = {
         # "font-family": "Edwardian Script ITC",
     "font-family": "Script, serif",
         "font-image": "images/puberty2text.png",
-        "font-size": "50px",
+        "font-size": "25px",
         "font-weight": "black",
         
         "line-width": 0,
@@ -69,7 +69,7 @@ STYLES = {
         "background-image": "images/burymeatmakeoutcreek.png",
         
         "font-family": "Times New Roman",
-        "font-size": "25px",
+        "font-size": "20px",
         "font-color": "#000000",
         # "shadow-color": "#FFFFFF",
         

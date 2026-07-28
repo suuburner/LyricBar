@@ -3,7 +3,7 @@ STYLES = {
         "font-color": "#d58fe8",
         # "font-family": "Bjork",
         "font-family": "Bjork, Arial, sans-serif",
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-color": "#a22929",
         "line-width": 1,
@@ -20,7 +20,7 @@ STYLES = {
     "vespertine": {
         "font-color": "#ffffff",
         "font-family": "Vespertine, Georgia, serif",
-        "font-size": "50px",
+        "font-size": "25px",
         
         "line-width": 0.75,
         "line-color": "#ffffff",

@@ -6,7 +6,7 @@ STYLES = {
         "font-family": "Astloch, Arial, sans-serif",
         "font-color": "#f3f2ef",
         "font-weight": "bold",
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-width": 0,
         
@@ -20,7 +20,7 @@ STYLES = {
         "font-family": "Xaltid, Arial, sans-serif",
         "font-color": "#8b893f",
         "font-weight": "bold",
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-width": 0,
         

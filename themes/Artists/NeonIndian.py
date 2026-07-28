@@ -4,7 +4,7 @@ STYLES = {
         
         "font-color": "#e0eef5aa",
         "font-family": "Hor, serif",
-        "font-size": "35px",
+        "font-size": "22px",
         "font-weight": "bold",
         "font-italic": False,
         

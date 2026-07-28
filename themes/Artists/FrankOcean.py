@@ -18,7 +18,7 @@ STYLES = {
 
     "font-family": "Blonde, Arial, sans-serif",
         "font-color": "#000000aa",
-        "font-size": "50px",
+        "font-size": "25px",
         
         "line-width": 0,
         

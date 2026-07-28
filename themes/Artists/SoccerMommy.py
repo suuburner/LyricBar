@@ -4,7 +4,7 @@ STYLES = {
 
         "font-family": "Pixelon, Arial, sans-serif",
         "font-color": "#af8484c0",
-        "font-size": "30px",
+        "font-size": "21px",
 
         "line-color": "#8e0d1d88",
         "line-width": 0.5,

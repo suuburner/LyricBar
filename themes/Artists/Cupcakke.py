@@ -5,7 +5,7 @@ STYLES = {
         "font-color": "#dcdac7",
         "font-family": "Feathergraphy Clean, Arial, sans-serif",
         
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-width": 0,
         

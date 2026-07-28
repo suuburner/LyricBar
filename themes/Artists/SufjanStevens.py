@@ -3,7 +3,7 @@ STYLES = {
         "background-color": "qradialgradient(spread:pad, cx:0.5, cy:0.5, radius:0.6, fx:0.5, fy:1, stop:0 #374a50, stop:1 #00000000)",
         "font-family": "Nimbus Sans, Arial, sans-serif",
         "font-color": "#ffffff",
-        "font-size": "45px",
+        "font-size": "24px",
         
         "line-width": 0,
         

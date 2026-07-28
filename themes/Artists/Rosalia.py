@@ -4,7 +4,7 @@ STYLES = {
         
         "font-color": "#FF0000",
         "font-family": "Eurostar, serif",
-        "font-size": "50px",
+        "font-size": "25px",
         
         "line-color": "#ffffff",
         "line-width": 3,

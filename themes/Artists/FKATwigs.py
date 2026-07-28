@@ -4,7 +4,7 @@ STYLES = {
         "background-color": "#734E4E64",
         
         "font-family": "OBG EUSEXUA 2024",
-        "font-size": "30px",
+        "font-size": "21px",
         "font-color": "#ffffff",
         
         "line-color": "#000000",

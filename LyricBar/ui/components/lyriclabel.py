@@ -146,11 +146,11 @@ class LyricLabel(OutlinedLabel):
         # Create separate timestamp labels with independent height
         self.timestamp_left = QLabel("0:00", parent=parent)
         self.timestamp_left.setStyleSheet("background-color: transparent; color: white;")
-        self.timestamp_left.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.timestamp_left.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         
         self.timestamp_right = QLabel("0:00", parent=parent)
         self.timestamp_right.setStyleSheet("background-color: transparent; color: white;")
-        self.timestamp_right.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.timestamp_right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         
         self.glow_color = QColor(0, 0, 0, 200)
         
@@ -162,6 +162,23 @@ class LyricLabel(OutlinedLabel):
         self.front_pad.show()
         self.front_imagepad.show()
         self.progress_ring.show()
+
+        # Explicit stacking order, bottom to top. This used to rely on
+        # incidental widget-creation order (back_imagepad is constructed
+        # before back_pad, so Qt's default sibling stacking happened to put
+        # back_pad above it) with nothing guaranteeing it stays that way.
+        # That's exactly the kind of thing that's easy to silently break --
+        # and if it ever didn't hold, the border (drawn on back_pad) would
+        # render *underneath* an opaque background-image theme's photo and
+        # simply never be seen, which matches themes where the border
+        # looked invisible.
+        self.back_imagepad.raise_()
+        self.back_pad.raise_()
+        self.front_imagepad.raise_()
+        self.front_pad.raise_()
+        self.raise_()
+        self.timestamp_left.raise_()
+        self.timestamp_right.raise_()
         self.progress_ring.raise_()
         
     @pyqtProperty(float)
@@ -224,7 +241,7 @@ class LyricLabel(OutlinedLabel):
         # lyric text's own fit-to-width scaling, so a long line shrinks
         # enough to clear the timestamps instead of rendering flush to the
         # bar's raw edges. Text is never cropped -- it just scales smaller.
-        self.setHorizontalMargin(end_cap_margin + timestamp_width + 6)
+        self.setHorizontalMargin(end_cap_margin + timestamp_width + 2)
 
     def move(self, x, y):
         super().move(x, y)
@@ -348,7 +365,13 @@ class LyricLabel(OutlinedLabel):
                 font_size = kwargs.get("font-size", "30px")
                 font_family = kwargs.get("font-family", "Arial, sans-serif")
                 # Keep timestamps smaller than lyrics but still readable.
-                timestamp_size = max(10, int(float(font_size.replace("px", "")) * 0.85) - 2)
+                # Keep timestamps small and stable regardless of how big a
+                # theme's own lyric font-size is -- this used to scale
+                # directly off the raw theme font-size with only a lower
+                # bound, so a theme authored with e.g. 50px lyrics produced
+                # a ~40px timestamp trying to fit a 12px-tall box. Clamped
+                # to a sensible range instead.
+                timestamp_size = min(12, max(10, int(float(font_size.replace("px", "")) * 0.85) - 2))
                 style = f"background-color: transparent; color: {color_str}; font-size: {timestamp_size}px; font-family: {font_family};"
                 self.timestamp_left.setStyleSheet(style)
                 self.timestamp_right.setStyleSheet(style)

@@ -4,7 +4,7 @@ STYLES = {
 
         "font-family": "Margic",
         "font-color": "#789bbf",
-        "font-size": "35px",
+        "font-size": "22px",
         "font-weight": "bold",
         
         "line-color": "#333438",

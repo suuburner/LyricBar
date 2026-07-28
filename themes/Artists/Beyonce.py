@@ -4,7 +4,7 @@ STYLES = {
         "background-color": "qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #18181f, stop:0.5 #222228, stop:1 #000000)",
         "font-color": "#ffffff",
         "font-family": "Roboto Mono Light",
-        "font-size": "25px",
+        "font-size": "20px",
         "font-weight": "light",
         "shadow-color": "#ffffff",
         "line-width": 0.3,
@@ -16,7 +16,7 @@ STYLES = {
         "foreground-image": "images/cowboycarter_fore.png",
         "font-color": "#e0e0e0",
         "font-family": "Roboto Mono Light",
-        "font-size": "25px",
+        "font-size": "20px",
         "font-weight": "light",
         
         "line-width": 0.3,
@@ -30,7 +30,7 @@ STYLES = {
         
         "font-color": "#d0a8bc",
         "font-family": "Knockout HTF66-FullFlyweight",
-        "font-size": "50px",
+        "font-size": "25px",
         
         "line-width": 0,
         "use-shadow": False,

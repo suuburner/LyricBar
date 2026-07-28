@@ -23,7 +23,7 @@ STYLES = {
         # "font-family": "Mx437 IBM VGA 8x14",
     "font-family": "Arial, sans-serif",
         "font-color": "#51f57522",
-        "font-size": "35px",
+        "font-size": "22px",
         
         "line-width": 0.5,
         "line-color": "#1f7820",

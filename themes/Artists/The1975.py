@@ -5,7 +5,7 @@ STYLES = {
         
         "font-color": "#ffffff",
         "font-family": "Impact, Arial Black, sans-serif",
-        "font-size": "33px",
+        "font-size": "22px",
         "font-weight": "bold",
         
         "line-color": "#00d4ff66",
@@ -24,7 +24,7 @@ STYLES = {
         
         "font-color": "#ffffff",
         "font-family": "CCBiffBamBoom, Impact, Arial Black, sans-serif",
-        "font-size": "36px",
+        "font-size": "22px",
         "font-weight": "bold",
         
         "line-color": "#ff6b9d99",
@@ -43,7 +43,7 @@ STYLES = {
         
         "font-color": "#ffffff",
         "font-family": "Consolas, Courier New, monospace",
-        "font-size": "30px",
+        "font-size": "21px",
         "font-weight": "bold",
         
         "line-color": "#7b2cbf99",
@@ -62,7 +62,7 @@ STYLES = {
         
         "font-color": "#ffffff",
         "font-family": "Candara, Optima, sans-serif",
-        "font-size": "36px",
+        "font-size": "22px",
         "font-weight": "300",
         "font-italic": True,
         
@@ -82,7 +82,7 @@ STYLES = {
         
         "font-color": "#0a0a0a",
         "font-family": "Courier New, Consolas, monospace",
-        "font-size": "31px",
+        "font-size": "21px",
         "font-weight": "bold",
         
         "line-color": "#000000aa",
@@ -101,7 +101,7 @@ STYLES = {
         
         "font-color": "#ffffff",
         "font-family": "Montserrat ExtraBold, Montserrat, Century Gothic, sans-serif",
-        "font-size": "35px",
+        "font-size": "22px",
         "font-weight": "800",
         "font-italic": False,
         

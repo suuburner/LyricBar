@@ -3,7 +3,7 @@ STYLES = {
         "background-color": "qradialgradient(spread:pad, cx:0.3, cy:0.3, radius:1.2, fx:0.3, fy:0.3, stop:0 #4a3428, stop:0.4 #2d1f1a, stop:0.8 #1a1210, stop:1 #000000dd)",
         
         "font-family": "Cg, Georgia, serif",
-        "font-size": "38px",
+        "font-size": "23px",
         "font-color": "#f5e6d3",
         
         "line-width": 0,
@@ -20,7 +20,7 @@ STYLES = {
         
     "font-family": "LTCCaslonLongSwash, serif",
         "font-color": "#ffffff",
-        "font-size": "35px",
+        "font-size": "22px",
         
         "line-color": "#ff6b9d99",
         "line-width": 0.2,
@@ -57,7 +57,7 @@ STYLES = {
         # "font-family": "Marons",
     "font-family": "Marons, serif",
         "font-color": "#5d4e37",
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-color": "#8b7355aa",
         "line-width": 0.2,
@@ -74,7 +74,7 @@ STYLES = {
         # "font-family": "Modern No. 216 Heavy",
         "font-family": "Modern No. 216 Heavy, Arial, sans-serif",
         "font-color": "#ffffff",
-        "font-size": "32px",
+        "font-size": "21px",
         
         "line-color": "#8fa8c5aa",
         "line-width": 0.2,
@@ -91,7 +91,7 @@ STYLES = {
         
         "font-family": "Futura Display BQ, Futura, Arial, sans-serif",
         "font-color": "#f2db78",
-        "font-size": "40px",
+        "font-size": "23px",
         
         "line-color": "#f2db78aa",
         "line-width": 0.2,
@@ -108,7 +108,7 @@ STYLES = {
         
         # "font-family": "Rainbow",
     "font-family": "Rainbow, serif",
-        "font-size": "50px",
+        "font-size": "25px",
         "font-color": "qlineargradient(spread:pad, x1:0, y1:1, x2:1, y2:0, stop:0 #998a4b, stop:0.3 #9f904d, stop:1 #fdf9dc)",
         
         "line-width": 0,
