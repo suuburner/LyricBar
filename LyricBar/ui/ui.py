@@ -2,6 +2,8 @@ import logging
 import signal
 import sys
 import time
+
+logger = logging.getLogger(__name__)
 from PyQt5.QtCore import Qt, QTimer, QCoreApplication, pyqtSignal, QMutex, QSettings
 from PyQt5.QtGui import QBitmap, QCursor, QIcon, QPainter, QPainterPath, QRegion
 from PyQt5.QtWidgets import (
@@ -255,7 +257,7 @@ class LyricsDisplay(QWidget):
         
         # Initialize progress bar to 0 on startup
         self.label.setProgress(0)
-        logging.info("=== APP INITIALIZED - Progress bar reset to 0 ===")
+        logger.info("LyricBar ready")
         self._drag_pos = None
         self._is_dragging = False
         self.setup_debug_console()
@@ -296,7 +298,7 @@ class LyricsDisplay(QWidget):
         return not ((self.geometry().top() <= QCursor.pos().y() <= self.geometry().bottom()) or check_if_windows_locked() or self.app.screens() == [])
     
     def switch_mode(self):
-        logging.info("SWITCHING MODE")
+        logger.debug("Switching lyrics/STT display mode")
         if self.line_mode == 0:
             if self.sst_maintainer is None:
                 self.toast("STT not available")
@@ -643,8 +645,8 @@ class LyricsDisplay(QWidget):
                 # themes get it, artist themes don't) rather than leaving
                 # whatever the previous theme's tint was until next resize.
                 self.applyRoundedCorners()
-        except Exception as e:
-            logging.error(f"Error updating style: {e}")
+        except Exception:
+            logger.exception("Error updating style")
         finally:
             self.style_mutex.unlock()
         
@@ -702,7 +704,7 @@ class LyricsDisplay(QWidget):
                 return
             
             track = self.now_playing.current_track
-            logging.info(f"Track change: {track.title} - {track.artist}")
+            logger.debug("Track change: %s - %s", track.title, track.artist)
             
             # Clear logged fonts for new track
             from LyricBar.ui.components.outlinedlabel import LOGGED_FONTS
@@ -747,14 +749,12 @@ class LyricsDisplay(QWidget):
             self.setHidden(False)
             self.pending_track_data = None
 
-        except Exception as e:
-            logging.error(f"!!! ERROR in handleTrackChange: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            logger.exception("Error in handleTrackChange")
     
     def handleLyricsResult(self, lyrics, track):
         """Handle lyrics search result and clear search in progress flag"""
-        logging.info(f"handleLyricsResult called: lyrics={'found' if lyrics else 'None'}, track={track}")
+        logger.debug("Lyrics search result: %s for %s", "found" if lyrics else "not found", track)
         # Clear the search in progress flag
         self.lyrics_search_in_progress = False
         # Call the original set_lyrics method
@@ -765,20 +765,23 @@ class LyricsDisplay(QWidget):
             if value == PlayingStatusTrigger.PAUSE:
                 self.paused = True
                 if self.now_playing and self.now_playing.current_track:
-                    logging.info(f"!!PAUSING: {self.now_playing.current_track}")
+                    logger.debug("Pause callback: %s", self.now_playing.current_track)
                 self.hide_later_signal.emit()
                 
             elif value == PlayingStatusTrigger.RESUME:
                 self.paused = False
                 if self.now_playing and self.now_playing.current_track:
-                    logging.info(f"!!RESUMING: {self.now_playing.current_track}")
+                    logger.debug("Resume callback: %s", self.now_playing.current_track)
                 self.setHidden(False)
                 
             elif value == PlayingStatusTrigger.NEW_TRACK:
                 self.paused = False
-                logging.info("=== RECEIVED NEW_TRACK CALLBACK ===")
                 if self.now_playing and self.now_playing.current_track:
-                    logging.info(f"!!NEW TRACK: {self.now_playing.current_track.title} - {self.now_playing.current_track.artist}")
+                    logger.debug(
+                        "New track callback: %s - %s",
+                        self.now_playing.current_track.title,
+                        self.now_playing.current_track.artist,
+                    )
                     # Force immediate complete reload on track change
                     self.pending_track_data = value
                     # Stop debounce timer if it's running
@@ -786,12 +789,12 @@ class LyricsDisplay(QWidget):
                     # Call handleTrackChange immediately
                     self.handleTrackChange()
                 else:
-                    logging.info("No current track info available")
+                    logger.debug("New track callback received with no current track info")
                     
             elif isinstance(value, str):
                 self.toast_signal.emit(value, 2000)
-        except Exception as e:
-            logging.error(f"Error in maintainer_callback: {e}")
+        except Exception:
+            logger.exception("Error in maintainer_callback")
 
 
     def updateLyrics(self, anim=True):
@@ -854,8 +857,8 @@ class LyricsDisplay(QWidget):
                     
 
                             
-                except Exception as e:
-                    logging.error(f"Error updating lyrics label: {e}")
+                except Exception:
+                    logger.exception("Error updating lyrics label")
             else:
                 # No line available - check if music is playing but no lyrics found
                 self.displaying_line = None
@@ -880,8 +883,8 @@ class LyricsDisplay(QWidget):
                 if self.label.text() != "⏸":
                     self.label.setText("⏸", False)
 
-        except Exception as e:
-            logging.error(f"Error in updateLyrics: {e}")
+        except Exception:
+            logger.exception("Error in updateLyrics")
     
 
         
@@ -915,8 +918,8 @@ class LyricsDisplay(QWidget):
         try:
             self.updateLyrics()
             self.updateProgress()
-        except Exception as e:
-            logging.error(f"Error in update_info: {e}")
+        except Exception:
+            logger.exception("Error in update_info")
         
     def setHidden(self, hidden):
         # Don't interfere with minimized state
@@ -1132,8 +1135,7 @@ class SystemTrayIcon(QSystemTrayIcon):
                 self.parent.toast("Console toggle not available in dev mode")
         except Exception as e:
             self.parent.toast(f"Console error: {e}")
-            import logging
-            logging.error(f"Failed to toggle debug console: {e}")
+            logger.exception("Failed to toggle debug console")
 
     def restart(self):
         """Restart LyricBar"""
@@ -1166,13 +1168,13 @@ class SystemTrayIcon(QSystemTrayIcon):
         QCoreApplication.exit()
 
 def main():
-    # Configure logging FIRST
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(levelname)s:%(name)s:%(message)s',
-        force=True
-    )
-    logging.info("=== LYRICBAR STARTING ===")
+    # Logging is already configured once, cleanly, in main.py via
+    # LyricBar.logging_setup.configure_logging() -- that used to get
+    # silently overwritten by a logging.basicConfig(..., force=True) call
+    # right here, which replaced the timestamped format with a plainer one
+    # and was the reason dev-console output looked inconsistent between
+    # runs depending on which configuration "won".
+    logger.info("Starting LyricBar")
     
     # Enable hardware acceleration and smooth rendering
     QApplication.setAttribute(Qt.AA_UseDesktopOpenGL)  # Use desktop OpenGL for hardware acceleration
@@ -1205,10 +1207,9 @@ def main():
         d3d11 = ctypes.windll.d3d11
         if hasattr(d3d11, 'D3D11CreateDevice'):
             # Set preference for high-performance GPU (RTX 4050)
-            logging.info("🎯 Setting discrete GPU preference...")
-    except Exception as e:
-        logging.info(f"ℹ️  Could not set GPU preference programmatically: {e}")
-        logging.info("ℹ️  Make sure LyricBar.exe is set to 'High Performance' in Windows Graphics Settings")
+            logger.debug("Setting discrete GPU preference")
+    except Exception as exc:
+        logger.debug("Could not set GPU preference programmatically: %s", exc)
     
 
     
@@ -1221,8 +1222,7 @@ def main():
 
         log_gpu_status()
     except Exception as exc:
-        logging.info("ℹ️  GPU detection failed: %s", exc)
-        logging.info("ℹ️  Make sure to set LyricBar to 'High Performance' in Windows Graphics Settings")
+        logger.debug("GPU detection failed: %s", exc)
     
     # Set smooth rendering hints
     app.setStyle('Fusion')  # Use Fusion style for smoother, modern rendering
@@ -1247,7 +1247,7 @@ def main():
     # interval no-op QTimer: it forces a trip back into the Python
     # interpreter often enough that a pending signal actually gets handled.
     def handle_sigint(signum, frame):
-        logging.info("Ctrl+C received - shutting down gracefully")
+        logger.info("Ctrl+C received - shutting down gracefully")
         trayIcon.exit()
 
     signal.signal(signal.SIGINT, handle_sigint)

@@ -1,8 +1,11 @@
 import math
+import logging
 from PyQt5.QtWidgets import QLabel
 from PyQt5.QtCore import Qt, QSize, pyqtProperty, pyqtSignal, QMutex, QRect, QByteArray, QFile
 from PyQt5.QtGui import QBrush, QFontMetrics, QPainter, QPainterPath, QPen, QColor, QPixmap, QTransform, QFontMetricsF, QFontDatabase, QFont, QFontInfo
 import os
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -43,7 +46,10 @@ def getTextPath(font, text, alignment):
             #     painter.end()
             font_key = f"{font.family() if hasattr(font, 'family') else 'N/A'}"
             if font_key not in LOGGED_FONTS:
-                print(f"📝 Font used: {QFontInfo(font).family()} (requested: {font_key}) | exactMatch: {QFontInfo(font).exactMatch()}")
+                logger.debug(
+                    "Font used: %s (requested: %s) | exactMatch: %s",
+                    QFontInfo(font).family(), font_key, QFontInfo(font).exactMatch(),
+                )
                 LOGGED_FONTS.add(font_key)
             # get_path_lock.unlock()
             return path

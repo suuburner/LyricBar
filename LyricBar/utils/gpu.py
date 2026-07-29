@@ -60,21 +60,11 @@ def log_gpu_status() -> None:
     try:
         gpus = detect_gpu_info()
     except Exception as exc:  # pragma: no cover - safety net for odd environments
-        logger.info("ℹ️  GPU detection failed: %s", exc)
+        logger.debug("GPU detection failed: %s", exc)
         return
 
     if not gpus:
-        logger.info("ℹ️  No GPU information detected; relying on the default renderer")
+        logger.debug("No GPU information detected; relying on the default renderer")
         return
 
-    for gpu in gpus:
-        logger.info("🎮 Detected GPU: %s", gpu)
-        lowered = gpu.lower()
-        if "nvidia" in lowered or "rtx" in lowered or "geforce" in lowered:
-            logger.info("✅ NVIDIA GPU detected")
-        elif "intel" in lowered:
-            logger.info("ℹ️  Intel GPU detected")
-        elif "amd" in lowered or "radeon" in lowered:
-            logger.info("ℹ️  AMD GPU detected")
-        else:
-            logger.info("ℹ️  GPU detected")
+    logger.info("GPU(s) detected: %s", ", ".join(gpus))

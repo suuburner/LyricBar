@@ -13,6 +13,8 @@ from LyricBar.nowplaying.nowplaying import NowPlaying
 from LyricBar.config import settings
 from LyricBar.utils.dataclasses import PlayingInfo, PlayingStatusTrigger, TrackInfo
 
+logger = logging.getLogger(__name__)
+
 
 
 class NowPlayingSystem(NowPlaying):
@@ -22,7 +24,7 @@ class NowPlayingSystem(NowPlaying):
         try:
             self.manager = asyncio.run(self.get_media_manager())
         except Exception as exc:
-            logging.debug("Media manager unavailable: %s", exc)
+            logger.debug("Media manager unavailable: %s", exc)
         # Support both single app and list of apps. `tracking_app=None` means
         # "use whatever is currently configured" -- read live from `settings`
         # here (construction time) rather than baking in a stale default
@@ -92,9 +94,9 @@ class NowPlayingSystem(NowPlaying):
         return True
 
     def sync(self):
-        logging.debug("TRY SYNC WITH SYSTEM")
+        logger.debug("Attempting sync with system media session")
         if not self.sync_mutex.tryLock(0):
-            logging.debug("SYNCING SKIPPED")
+            logger.debug("Sync skipped: previous sync still in progress")
             return
         info = asyncio.run(self.get_now_playing_info())
 
@@ -116,7 +118,7 @@ class NowPlayingSystem(NowPlaying):
 
         if not self.is_initialized and (info is None or not info.is_playing):
             # More generic message when waiting for any music session
-            logging.info("WAITING FOR MUSIC")
+            logger.info("Waiting for music")
             self.is_initialized = True
             self.playing_info = None
             if self.update_callback is not None:
@@ -124,7 +126,7 @@ class NowPlayingSystem(NowPlaying):
             self.sync_mutex.unlock()
             return
         if info is None and self.playing_info is not None:
-            logging.info(f"{self.last_matched_tracking_app or self.app_id} DOWN")
+            logger.info("%s closed", self.last_matched_tracking_app or self.app_id)
             self.is_initialized = True
             self.playing_info = None
             if self.update_callback is not None:
@@ -135,18 +137,20 @@ class NowPlayingSystem(NowPlaying):
             self.sync_mutex.unlock()
             return
         if not info.is_playing and (self.playing_info is not None and self.playing_info.is_playing):
-            logging.info("PAUSING")
+            logger.info("Paused")
             self.playing_info.is_playing = False
             if self.update_callback is not None:
                 self.update_callback(PlayingStatusTrigger.PAUSE)
             self.sync_mutex.unlock()
             return
         if info.is_playing and (self.playing_info is None or self.track_check(self.playing_info, info)):
-            logging.info(f"NEW TRACK: {info.current_track}")
-            logging.info(f"OLD TRACK: {self.playing_info.current_track if self.playing_info else None}")
-            logging.info(f"NEW TRACK FULL INFO: Artist={info.current_track_artist}, Title={info.current_track_title}")
-            logging.info(f"PLAYING ON: {self.last_matched_tracking_app or self.app_id}")
-            
+            logger.info(
+                "Now playing: %s - %s (via %s)",
+                info.current_track_artist,
+                info.current_track_title,
+                self.last_matched_tracking_app or self.app_id,
+            )
+
             # Reset sync animation counter for new track
             self.sync_animation_frame = 0
             
@@ -154,7 +158,7 @@ class NowPlayingSystem(NowPlaying):
             # Reset begin time to current time (position 0) to avoid timestamp carryover from previous track
             if self.playing_info is not None and info.current_track != self.playing_info.current_track:
                 from datetime import datetime
-                logging.info("Track changed - resetting begin time to now (fixing Windows API timestamp bug)")
+                logger.debug("Resetting begin time to now (Windows Media API timestamp carryover fix)")
                 info.current_begin_time = datetime.now().timestamp() * 1000
             
             # Replace the old playing_info with the new one
@@ -164,12 +168,12 @@ class NowPlayingSystem(NowPlaying):
                 self.playing_info = info
             
             if self.update_callback is not None and (self.playing_info.current_track_artist != "" or self.playing_info.current_track_title != ""):
-                logging.info("TRIGGERING NEW_TRACK CALLBACK")
+                logger.debug("Triggering NEW_TRACK callback")
                 self.update_callback(PlayingStatusTrigger.NEW_TRACK)
             self.sync_mutex.unlock()
             return
         if info.is_playing and not self.playing_info.is_playing:
-            logging.info(f"RESUMING on {self.last_matched_tracking_app or self.app_id}")
+            logger.info("Resumed on %s", self.last_matched_tracking_app or self.app_id)
             if self.playing_info is not None:
                 self.playing_info.update(info)
             else:
@@ -177,7 +181,7 @@ class NowPlayingSystem(NowPlaying):
             if self.update_callback is not None:
                 self.update_callback(PlayingStatusTrigger.RESUME)
         if info.is_playing and self.playing_info and self.update_check(self.playing_info, info):
-            logging.debug("Syncing (frame %s)", self.sync_animation_frame)
+            logger.debug("Syncing (frame %s)", self.sync_animation_frame)
             self.sync_animation_frame += 1
 
 
@@ -214,7 +218,7 @@ class NowPlayingSystem(NowPlaying):
                 if info is not None:
                     title, artist = info.title, info.artist
             except Exception as exc:
-                logging.debug("Could not read media properties for %s: %s", app_id, exc)
+                logger.debug("Could not read media properties for %s: %s", app_id, exc)
             results.append(
                 {
                     "app_id": app_id,
@@ -226,12 +230,12 @@ class NowPlayingSystem(NowPlaying):
         return results
 
     async def get_best_session(self):
-        logging.debug("GETTING APP ID")
+        logger.debug("Getting app id")
         if self.manager is None:
             return None, None, None
         sessions = list(self.manager.get_sessions())
         session_ids = [session.source_app_user_model_id for session in sessions]
-        logging.debug("Available sessions: %s", session_ids)
+        logger.debug("Available sessions: %s", session_ids)
 
         matched_sessions = []
         for priority, tracking_app in enumerate(self.tracking_apps):
@@ -267,14 +271,14 @@ class NowPlayingSystem(NowPlaying):
         _, current_app_id, current_session = await self.get_best_session()
 
         if current_app_id is None or current_session is None:
-            logging.debug("No tracking app found")
+            logger.debug("No tracking app found")
             self.app_id = None
             self.session = None
             return None
 
         # If the active app/session changed, swap to the newly selected session.
         if current_app_id != self.app_id or current_session != self.session:
-            logging.debug(f"Switching from {self.app_id} to {current_app_id}")
+            logger.debug(f"Switching from {self.app_id} to {current_app_id}")
             self.app_id = current_app_id
             self.session = current_session
             
@@ -283,7 +287,7 @@ class NowPlayingSystem(NowPlaying):
             try:
                 info = await self.session.try_get_media_properties_async()
             except Exception as e:
-                logging.debug(e)
+                logger.debug(e)
                 self.session = None
                 return None
             if info is not None:

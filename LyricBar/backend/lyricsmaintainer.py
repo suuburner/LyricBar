@@ -83,9 +83,10 @@ class LyricsMaintainer():
                     return l
                 else:
                     self._log_blocked_once(
-                        f"get_line_with_timestamp({self.now_playing.progress:.0f}) returned None "
+                        f"no lyric line matches current position "
                         f"(lyrics has {len(self.lyrics.lines or [])} lines, first starts at "
-                        f"{self.lyrics.lines[0].timestamp if self.lyrics.lines else 'n/a'})"
+                        f"{self.lyrics.lines[0].timestamp if self.lyrics.lines else 'n/a'})",
+                        key="no_matching_line",
                     )
                     
             except Exception as e:
@@ -100,12 +101,17 @@ class LyricsMaintainer():
             # Always unlock in finally block to prevent deadlocks
             self.lyrics_mutex.unlock()
 
-    def _log_blocked_once(self, reason):
-        """Log why `line` returned None, but only on change, so this doesn't spam
-        the console at the 16ms UI refresh rate."""
-        if reason != self._last_blocked_reason:
-            logger.info(f"[lyrics display blocked] {reason}")
-            self._last_blocked_reason = reason
+    def _log_blocked_once(self, message, key=None):
+        """Log why `line` returned None, but only when the *situation*
+        changes, so this doesn't spam the console at the 16ms UI refresh
+        rate. `key` is the stable thing to compare between calls -- if the
+        message itself contains something that changes every tick (like a
+        live timestamp), pass a stable `key` separately, or this dedup
+        silently does nothing (every message ends up "different")."""
+        key = key if key is not None else message
+        if key != self._last_blocked_reason:
+            logger.info(f"[lyrics display blocked] {message}")
+            self._last_blocked_reason = key
     
     def manager_callback(self, value):
         if self.stopped:
@@ -181,7 +187,7 @@ class LyricsMaintainer():
 
     
     def set_lyrics(self, value, track=None, check_first=False):
-        logger.info(
+        logger.debug(
             f"set_lyrics called: value={'Lyrics(%d lines, source=%s)' % (len(value.lines or []), value.source) if value else None}, "
             f"track={track}, current_track={self.now_playing.current_track}"
         )
@@ -203,7 +209,7 @@ class LyricsMaintainer():
         try:
             self.lyrics = value
             if not self.lyrics:
-                logger.info("LYRICS NOT FOUND")
+                logger.debug("No lyrics to display for current track")
                 self.now_playing.has_lyrics = False
             else:
                 self.now_playing.has_lyrics = True

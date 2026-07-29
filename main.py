@@ -1,4 +1,8 @@
-# from LyricBar.ui.ui_seelen import main
+from LyricBar.logging_setup import configure_logging
+
+configure_logging()
+
 from LyricBar.ui.ui import main
+
 if __name__ == '__main__':
     main()

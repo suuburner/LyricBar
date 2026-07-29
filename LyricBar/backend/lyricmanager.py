@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import json
 import logging
+
+logger = logging.getLogger(__name__)
 import os
 import re
 from pathlib import Path
@@ -199,8 +201,8 @@ class FromSpotify(LyricsProvider):
         lyrics = None
         try:
             lyrics = self.pvd.get_lyrics(track.id)
-        except Exception as e:
-            logging.error(e)
+        except Exception:
+            logger.exception("FromSpotify lyrics lookup failed")
         if (lyrics is None) or ("lyrics" not in lyrics) or ("syncType" not in lyrics["lyrics"]) or (lyrics["lyrics"]["syncType"] != "LINE_SYNCED"):
             return None
         return Lyrics.from_json(lyrics, track)
@@ -213,8 +215,8 @@ class FromThirdParty(LyricsProvider):
         lrc = None
         try:
             lrc = syncedlyrics.search(track, allow_plain_format=False, providers=self.third_parties, enhanced=False)
-        except Exception as e:
-            logging.error(e)
+        except Exception:
+            logger.exception("Third-party lyrics search failed")
         if lrc is None:
             return None
         lyrics = Lyrics.from_lrc(lrc, track)
@@ -246,8 +248,8 @@ class LyricsThread(QThread):
             return
         try:
             self.callback(payload)
-        except Exception as exc:
-            logging.exception("Lyrics callback failed: %s", exc)
+        except Exception:
+            logger.exception("Lyrics callback failed")
         
     def cancel(self):
         self.cancelled = True
@@ -280,13 +282,13 @@ class LyricsThread(QThread):
         try:
             self._run()
         except Exception:
-            logging.exception(
+            logger.exception(
                 f"LyricsThread crashed while searching for {self.track.artist} - {self.track.title}"
             )
             self.gracefully_out()
 
     def _run(self):
-        logging.info(f"LyricsThread started for {self.track.artist} - {self.track.title} (source={self.source})")
+        logger.debug("LyricsThread started for %s - %s (source=%s)", self.track.artist, self.track.title, self.source)
         if self.cancelled:
             self.gracefully_out()
             return
@@ -312,10 +314,10 @@ class LyricsThread(QThread):
                     if ret and not ret.source:
                         ret.source = "Cache"
                     if self.cancelled:
-                        logging.info("LyricsThread cancelled after cache hit, before emit")
+                        logger.debug("LyricsThread cancelled after cache hit, before emit")
                         self.gracefully_out()
                         return
-                    logging.info(f"LyricsThread emitting cache hit ({len(ret.lines or [])} lines)")
+                    logger.info("Lyrics found for %s - %s (cached, %d lines)", self.track.artist, self.track.title, len(ret.lines or []))
                     if self.callback is not None:
                         self.result_ready.emit((ret, self.track))
                         self.gracefully_out()
@@ -329,33 +331,38 @@ class LyricsThread(QThread):
             self.source = [self.source if self.source in self.maintainer.providers else None]
         else:
             self.source = [s if s in self.maintainer.providers else None for s in self.source]
+        tried = []
         for name in self.source:
             if self.cancelled:
                 self.gracefully_out()
                 return
             provider = self.maintainer.providers[name]
-            logging.info(f"Searching for lyrics: {self.track.artist} - {self.track.title} from {name}")
+            logger.debug("Searching for lyrics: %s - %s from %s", self.track.artist, self.track.title, name)
+            tried.append(name)
             lyrics = provider.get_lyrics(self.track)
             if lyrics is not None:
                 self.maintainer.save_lyrics(self.track, lyrics)
                 lyrics.source = name
                 ret = lyrics
             if ret is not None:
-                logging.info(f"✓ LYRICS FOUND from {name}")
                 break
-            else:
-                logging.info(f"✗ No lyrics found from {name}, trying next provider...")
-        
-        if ret is None:
-            logging.warning(f"✗ No lyrics found for '{self.track.artist} - {self.track.title}' from any provider")
+
+        if ret is not None:
+            logger.info("Lyrics found for %s - %s (via %s)", self.track.artist, self.track.title, ret.source)
+        else:
+            logger.info(
+                "No lyrics found for %s - %s (tried: %s)",
+                self.track.artist, self.track.title, ", ".join(tried) or "no providers configured",
+            )
         
         if self.cancelled:
-            logging.info(f"LyricsThread cancelled for {self.track.artist} - {self.track.title}, before emit")
+            logger.debug("LyricsThread cancelled for %s - %s, before emit", self.track.artist, self.track.title)
             self.gracefully_out()
             return
-        logging.info(
-            f"LyricsThread emitting result for {self.track.artist} - {self.track.title}: "
-            f"{'found (%d lines)' % len(ret.lines or []) if ret else 'not found'}"
+        logger.debug(
+            "LyricsThread emitting result for %s - %s: %s",
+            self.track.artist, self.track.title,
+            f"found ({len(ret.lines or [])} lines)" if ret else "not found",
         )
         if self.callback is not None:
             self.result_ready.emit((ret, self.track))
@@ -393,7 +400,7 @@ class LyricsManager():
             if lg.track == track and lg.source == source and not lg.cancelled:
                 found = True
             else:
-                logging.info(
+                logger.debug(
                     f"Cancelling in-flight lyrics search for {lg.track.artist} - {lg.track.title} "
                     f"(source={lg.source}) in favor of new request for {track.artist} - {track.title} (source={source})"
                 )
@@ -427,7 +434,7 @@ class LyricsManager():
 
         for lg in threads_to_cleanup:
             if lg.isRunning():
-                logging.warning("Lyrics thread did not stop in time; terminating it")
+                logger.warning("Lyrics thread did not stop in time; terminating it")
                 lg.terminate()
                 lg.wait(1000)
 
