@@ -187,6 +187,9 @@ class LyricsDisplay(QWidget):
         self.show()
         self.setMouseTracking(True)
         
+        self.style_name = "default"
+        self.formatter = lambda x: x
+
         # Apply rounded corners
         self.applyRoundedCorners()
         
@@ -199,9 +202,6 @@ class LyricsDisplay(QWidget):
         
         self.bar_hidden = False
         # self.app.installEventFilter(self)
-        
-        self.style_name = "default"
-        self.formatter = lambda x: x
         
         self.reappear_timer = QTimer(self)
         self.reappear_timer.setSingleShot(True)
@@ -576,6 +576,20 @@ class LyricsDisplay(QWidget):
         self.setAttribute(Qt.WA_NativeWindow, False)  # Use Qt's compositor for smoother blending
         self.setAttribute(Qt.WA_DontCreateNativeAncestors, True)  # Optimize widget hierarchy
     
+    def _faux_taskbar_alpha(self):
+        """Backdrop tint behind the whole bar. The minimal themes use
+        intentionally low-opacity/translucent backgrounds and rely on this
+        layer for legibility against whatever's on the desktop underneath.
+        Artist themes bring their own fully-designed backgrounds (often
+        gradients that deliberately fade to transparent for negative
+        space) -- stacking this same fixed dark tint under those muddies
+        the design with an unintended darkening, so skip it for them.
+        """
+        style_name = getattr(self, "style_name", "default")
+        if style_name in MINIMAL_THEME_NAMES or style_name == "default":
+            return 0.12
+        return 0.0
+
     def applyRoundedCorners(self):
         """Apply rounded corners to the window"""
         radius = self.corner_radius
@@ -596,7 +610,7 @@ class LyricsDisplay(QWidget):
         # Keep background visibly rounded regardless of mask mode.
         self.faux_taskbar.setStyleSheet(
             f"""
-            background-color: rgba(0, 0, 0, 0.12);
+            background-color: rgba(0, 0, 0, {self._faux_taskbar_alpha()});
             border-radius: {radius}px;
             """
         )
@@ -624,6 +638,11 @@ class LyricsDisplay(QWidget):
             # Trigger immediate rainbow update if switching to black theme
             if style["name"] == "black":
                 self.updateRainbowBackground()
+            else:
+                # Re-evaluate the backdrop tint for the new theme (minimal
+                # themes get it, artist themes don't) rather than leaving
+                # whatever the previous theme's tint was until next resize.
+                self.applyRoundedCorners()
         except Exception as e:
             logging.error(f"Error updating style: {e}")
         finally:
@@ -637,7 +656,7 @@ class LyricsDisplay(QWidget):
             # Reset to transparent for other themes
             self.faux_taskbar.setStyleSheet(
                 f"""
-                background-color: rgba(0, 0, 0, 0.12);
+                background-color: rgba(0, 0, 0, {self._faux_taskbar_alpha()});
                 border-radius: {self.corner_radius}px;
                 """
             )

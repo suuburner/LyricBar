@@ -47,29 +47,37 @@ class Pad(QLabel):
         full_rect = QRectF(0, 0, max(0.0, self.width() - 1), max(0.0, self.height() - 1))
 
         if has_border:
-            # Robust border technique: fill the full outer shape with the
-            # border color, then fill a smaller inner shape (inset by the
-            # border width, with a proportionally smaller radius) with the
-            # normal background brush on top. Two solid fills, no stroking -
-            # this sidesteps QPen/antialiasing edge cases entirely (uneven
-            # sub-pixel rounding under DPI scaling, cosmetic-pen quirks,
-            # etc.) that make a thin stroked outline look inconsistent.
+            # Robust border technique: compute the actual ring shape (outer
+            # rounded rect minus a smaller inset inner one, with a
+            # proportionally smaller inner radius) and fill *only* that ring
+            # with the border color, then separately fill the inner shape
+            # with the normal background brush. Two solid fills of disjoint
+            # shapes, no stroking - sidesteps QPen/antialiasing edge cases
+            # (uneven sub-pixel rounding under DPI scaling, cosmetic-pen
+            # quirks, etc.), and critically doesn't depend on the inner fill
+            # being opaque enough to visually cover the border color (a
+            # fully transparent brush, as used by background-image themes,
+            # would otherwise leave the border color showing through the
+            # entire shape instead of just a thin ring around the edge).
             outer_path = QPainterPath()
             if self.rounded_radius > 0:
                 outer_path.addRoundedRect(full_rect, self.rounded_radius, self.rounded_radius)
             else:
                 outer_path.addRect(full_rect)
-            painter.fillPath(outer_path, self.border_color)
 
             bw = self.border_width
             inner_rect = full_rect.adjusted(bw, bw, -bw, -bw)
+            inner_path = QPainterPath()
             if inner_rect.width() > 0 and inner_rect.height() > 0:
-                inner_path = QPainterPath()
                 if self.rounded_radius > 0:
                     inner_radius = max(0.0, self.rounded_radius - bw)
                     inner_path.addRoundedRect(inner_rect, inner_radius, inner_radius)
                 else:
                     inner_path.addRect(inner_rect)
+
+            ring_path = outer_path.subtracted(inner_path) if not inner_path.isEmpty() else outer_path
+            painter.fillPath(ring_path, self.border_color)
+            if not inner_path.isEmpty():
                 painter.fillPath(inner_path, self.brush)
         elif self.rounded_radius > 0:
             path = QPainterPath()

@@ -305,9 +305,19 @@ class LyricLabel(OutlinedLabel):
             if f"{key}-image" in kwargs:
                 p.setColor(QColor(0,0,0,0))
                 px = QPixmap(resource_path(kwargs[f"{key}-image"]))
-                px = px.scaledToHeight(self.height(), Qt.SmoothTransformation)
-                if px.width() > self.width():
-                    px = px.copy((px.width() - self.width()) // 2, 0, self.width(), self.height())
+                target_w, target_h = max(1, self.width()), max(1, self.height())
+                if px.width() > 0 and px.height() > 0:
+                    # "Cover" scale (like CSS background-size: cover): grow
+                    # the image, preserving aspect ratio, until both
+                    # dimensions are at least the bar's size, then crop the
+                    # overflow centered. No distortion (unlike a plain
+                    # stretch) and no empty space left over (unlike scaling
+                    # to height alone, the old behavior).
+                    px = px.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                    if px.width() > target_w or px.height() > target_h:
+                        x_off = max(0, (px.width() - target_w) // 2)
+                        y_off = max(0, (px.height() - target_h) // 2)
+                        px = px.copy(x_off, y_off, target_w, target_h)
                 if self.rounded_radius > 0:
                     path = QPainterPath()
                     path.addRoundedRect(0, 0, self.width(), self.height(), self.rounded_radius, self.rounded_radius)
