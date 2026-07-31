@@ -85,6 +85,22 @@ class SettingsDialog(QDialog):
         self.progress_checkbox.setChecked(bool(settings.show_progress_bar))
         form.addRow("Progress ring", self.progress_checkbox)
 
+        self.border_checkbox = QCheckBox("Show bar border")
+        self.border_checkbox.setChecked(bool(settings.border_enabled))
+        form.addRow("Border", self.border_checkbox)
+
+        self.timestamps_checkbox = QCheckBox("Show timestamps")
+        self.timestamps_checkbox.setChecked(bool(settings.show_timestamps))
+        form.addRow("Timestamps", self.timestamps_checkbox)
+
+        # The ring is drawn traced over the bar's own border -- with no
+        # border, there's nothing underneath for the "unfilled" portion of
+        # the ring to show against, so the two are kept in sync both ways:
+        # turning the ring on with the border off turns the border on too,
+        # and turning the border off with the ring on turns the ring off too.
+        self.progress_checkbox.toggled.connect(self._on_progress_toggled)
+        self.border_checkbox.toggled.connect(self._on_border_toggled)
+
         self.tracking_apps = QLineEdit()
         tracking_app = settings.tracking_app
         self.tracking_apps.setText(", ".join(tracking_app) if isinstance(tracking_app, list) else str(tracking_app))
@@ -160,6 +176,14 @@ class SettingsDialog(QDialog):
             """
         )
 
+    def _on_progress_toggled(self, checked):
+        if checked and not self.border_checkbox.isChecked():
+            self.border_checkbox.setChecked(True)
+
+    def _on_border_toggled(self, checked):
+        if not checked and self.progress_checkbox.isChecked():
+            self.progress_checkbox.setChecked(False)
+
     def detect_tracking_app(self):
         try:
             from LyricBar.nowplaying.nowplayingsystem import NowPlayingSystem
@@ -225,6 +249,10 @@ class SettingsDialog(QDialog):
             new_theme = self.theme_combo.currentText()
             current_progress = settings.show_progress_bar
             new_progress = self.progress_checkbox.isChecked()
+            current_border = settings.border_enabled
+            new_border = self.border_checkbox.isChecked()
+            current_timestamps = settings.show_timestamps
+            new_timestamps = self.timestamps_checkbox.isChecked()
             current_tracking = settings.tracking_app
 
             tracking_apps = [app.strip() for app in self.tracking_apps.text().split(",") if app.strip()]
@@ -242,7 +270,11 @@ class SettingsDialog(QDialog):
                 },
                 "Lyrics": {"Timing Offset": new_offset},
                 "Themes": {"Default": new_theme},
-                "Display": {"Progress Bar": new_progress},
+                "Display": {
+                    "Progress Bar": new_progress,
+                    "Border": new_border,
+                    "Timestamps": new_timestamps,
+                },
             })
 
             changes = {
@@ -254,6 +286,10 @@ class SettingsDialog(QDialog):
                 "theme_changed": new_theme != current_theme,
                 "progress_bar": new_progress,
                 "progress_bar_changed": new_progress != current_progress,
+                "border": new_border,
+                "border_changed": new_border != current_border,
+                "timestamps": new_timestamps,
+                "timestamps_changed": new_timestamps != current_timestamps,
                 "tracking_apps": tracking_apps,
                 "tracking_apps_changed": tracking_apps != current_tracking,
             }

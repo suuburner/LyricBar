@@ -14,6 +14,8 @@ LYRIC_FOLDER = "lyrics"
 THEME_FOLDER = "themes"
 DEFAULT_THEME = "Slate"
 SHOW_PROGRESS_BAR = True
+BORDER_ENABLED = True
+SHOW_TIMESTAMPS = True
 
 HTTP_PROXY = ""
 HTTPS_PROXY = ""
@@ -62,6 +64,7 @@ def _apply_settings(config):
     global STT_MODEL_PATH, STT_TRACKING_INPUT, PLAYING_INFO_PROVIDER
     global SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI
     global TRACKING_APP, SPICETIFY_PORT, SHOW_PROGRESS_BAR
+    global BORDER_ENABLED, SHOW_TIMESTAMPS
 
     appearance = config.get("Apperance", {})
     LEFTOUT_WIDTH = _as_int(appearance.get("Leftout Width"), LEFTOUT_WIDTH)
@@ -101,6 +104,10 @@ def _apply_settings(config):
     display = config.get("Display", {})
     if "Progress Bar" in display:
         SHOW_PROGRESS_BAR = bool(display.get("Progress Bar"))
+    if "Border" in display:
+        BORDER_ENABLED = bool(display.get("Border"))
+    if "Timestamps" in display:
+        SHOW_TIMESTAMPS = bool(display.get("Timestamps"))
 
     proxy = config.get("Proxy", {})
     host = proxy.get("Host")

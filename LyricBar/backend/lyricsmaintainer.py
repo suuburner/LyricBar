@@ -55,7 +55,7 @@ class LyricsMaintainer():
             
         try:
             if not self.now_playing.has_lyrics:
-                self._log_blocked_once("has_lyrics is False (no result set yet, or search failed/hasn't started)")
+                self._log_blocked_once("waiting for a lyrics search to find/return a result for this track")
                 return None  # Hide bar when no lyrics found
                 
             if not self.lyrics:
@@ -65,11 +65,11 @@ class LyricsMaintainer():
                 return None  # Hide bar instead of showing sync symbol
                 
             if not self.now_playing.is_playing:
-                self._log_blocked_once("now_playing.is_playing is False")
+                self._log_blocked_once("playback is paused")
                 return None
                 
             if not self.now_playing.current_begin_time:
-                self._log_blocked_once("now_playing.current_begin_time is falsy (no timeline yet)")
+                self._log_blocked_once("waiting for a timeline/position update from the player")
                 return None
                 
             try:
@@ -83,9 +83,9 @@ class LyricsMaintainer():
                     return l
                 else:
                     self._log_blocked_once(
-                        f"no lyric line matches current position "
-                        f"(lyrics has {len(self.lyrics.lines or [])} lines, first starts at "
-                        f"{self.lyrics.lines[0].timestamp if self.lyrics.lines else 'n/a'})",
+                        f"no lyric line at the current playback position, likely an intro/instrumental gap "
+                        f"before the first line at {self.lyrics.lines[0].timestamp if self.lyrics.lines else 'n/a'}ms "
+                        f"({len(self.lyrics.lines or [])} lines total)",
                         key="no_matching_line",
                     )
                     
@@ -107,10 +107,15 @@ class LyricsMaintainer():
         rate. `key` is the stable thing to compare between calls -- if the
         message itself contains something that changes every tick (like a
         live timestamp), pass a stable `key` separately, or this dedup
-        silently does nothing (every message ends up "different")."""
+        silently does nothing (every message ends up "different").
+
+        Logged at debug: this explains why the lyric bar is momentarily
+        hidden (paused, still searching, gap between lines, etc.), which is
+        expected/normal most of the time, not something worth surfacing in
+        the default console output."""
         key = key if key is not None else message
         if key != self._last_blocked_reason:
-            logger.info(f"[lyrics display blocked] {message}")
+            logger.debug(f"Lyric bar hidden: {message}")
             self._last_blocked_reason = key
     
     def manager_callback(self, value):

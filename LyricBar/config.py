@@ -29,6 +29,8 @@ class SettingsProxy:
         "theme_folder": "THEME_FOLDER",
         "default_theme": "DEFAULT_THEME",
         "show_progress_bar": "SHOW_PROGRESS_BAR",
+        "border_enabled": "BORDER_ENABLED",
+        "show_timestamps": "SHOW_TIMESTAMPS",
         "use_spotify_lyrics": "USE_SPOTIFY_LYRICS",
         "sp_dc": "SP_DC",
         "third_party_lyrics_providers": "THIRD_PARTY_LYRICS_PROVIDERS",

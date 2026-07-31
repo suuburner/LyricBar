@@ -246,6 +246,8 @@ def get_style(track: TrackInfo):
             album,
             settings.default_theme,
             settings.show_progress_bar,
+            settings.border_enabled,
+            settings.show_timestamps,
         )
         cached_style = _theme_cache.get(cache_key)
         if cached_style is not None:
@@ -296,6 +298,16 @@ def get_style(track: TrackInfo):
 
     style["name"] = style_name
     style["progress-visible"] = settings.show_progress_bar
+    style["timestamps-visible"] = settings.show_timestamps
+
+    if not settings.border_enabled:
+        # Global override: hide the border regardless of what this theme
+        # defines (or what _fill_accent_fallbacks derived for it above).
+        # This only affects the style dict returned here, not the theme's
+        # own entry in STYLES -- get_style() rebuilds from that each call,
+        # so re-enabling the setting shows exactly what the theme originally
+        # specified again, no separate "remember the old value" needed.
+        style["border-width"] = 0
 
     if cache_key is not None:
         if len(_theme_cache) >= _cache_max_size:

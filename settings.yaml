@@ -5,9 +5,9 @@ Lyrics:
   Folder: lyrics
   Global Offset: 0
   Providers:
-  - NetEase
   - Lrclib
   - Musixmatch
+  - NetEase
   SP_DC: ''
   Timing Offset: 0
 Playing Info:
@@ -31,4 +31,6 @@ Themes:
   Default: Catppuccin Mocha
   Folder: themes
 Display:
-  Progress Bar: false
+  Progress Bar: true
+  Border: true
+  Timestamps: true

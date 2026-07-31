@@ -200,7 +200,13 @@ def _search(
             break
         check_translation = lang is not None and isinstance(provider, Musixmatch)
         if _is_lrc_valid_crude(_l, allow_plain_format, check_translation):
-            logger.info(
+            # Kept at debug: LyricsThread._run() (lyricmanager.py) already logs
+            # "Lyrics found for <artist> - <title> (via <source>)" at info once
+            # the search actually completes, which is the line a user should
+            # see. This one is the same event one layer down (which underlying
+            # provider satisfied syncedlyrics' own search loop) and would just
+            # duplicate it in the console.
+            logger.debug(
                 f'synced-lyrics found for "{search_track}" on {provider.__class__.__name__}'
             )
             lrc = _l
@@ -211,7 +217,7 @@ def _search(
             )
             logger.debug(f"Lyrics: {_l}")
     if not lrc:
-        logger.info(f'No synced-lyrics found for "{search_track}" :(')
+        logger.debug(f'No synced-lyrics found for "{search_track}" :(')
         return None
     return lrc
 

@@ -17,14 +17,18 @@ STYLES = {
     "melodrama": {
         "background-image": "images/melodrama.png",
         "font-family": "Canela Light Trial, Arial, sans-serif",
-        "font-color": "#f7c059",
+        "font-color": "#e7b75e",
         "font-size": "22px",
-        
-        "line-width": 0,
+
+        "line-color": "#003395",
+        "line-width": 2,
         
         "shadow-color": "#e34345",
+        "shadow-radius": 20,
         
-        "rule": lambda track: (track.artist.lower() == "lorde" and any([_ in track.title.lower().replace("‘", "'").replace("’", "'") for _ in ["green light", "sober", "homemade dynamite", "the louvre", "liability", "hard feelings/loveless", "sober ii (melodrama)", "writer in the dark", "supercut", "liability (reprise)", "perfect places"]]))
+        "rule": lambda track: (track.artist.lower() == "lorde" and any([_ in track.title.lower().replace("‘", "'").replace("’", "'") for _ in ["green light", "sober", "homemade dynamite", "the louvre", "liability", "hard feelings/loveless", "sober ii (melodrama)", "writer in the dark", "supercut", "liability (reprise)", "perfect places"]])),
+
+        "format": lambda x: " ".join(x.upper()).replace("   ", "  ")
     },
     "pure heroine": {
         "background-color": "qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #000000, stop:0.4 #1a1a1a, stop:0.6 #1a1a1a, stop:1 #000000)",
