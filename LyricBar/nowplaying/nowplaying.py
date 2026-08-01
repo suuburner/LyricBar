@@ -7,11 +7,6 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-# NOTE: Spotify Web API credentials are set once, in nowplayingspotify.py
-# (the only provider that actually needs them), not here in the shared
-# base class -- every provider used to pay that import-time cost.
-
-
 class NowPlaying(QObject):
     def __init__(self, sync_interval=60000, update_callback=None):
         super().__init__()

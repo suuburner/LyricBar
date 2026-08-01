@@ -8,11 +8,9 @@ from PyQt5.QtWidgets import QLabel
 
 logger = logging.getLogger(__name__)
 
-
-
 FONT_DB = QFontDatabase
 FONT_DICT = {}
-LOGGED_FONTS = set()  # Track which fonts we've already logged
+LOGGED_FONTS = set()
 
 get_path_lock = QMutex()
 
@@ -36,15 +34,6 @@ def getTextPath(font, text, alignment):
             else:
                 path.addText((max_width - widths[idx]) / 2, line_height * idx, font, line)
         if path.boundingRect().height() >= 3:
-            # if i > 0:
-            #     output = QPixmap(math.ceil(path.boundingRect().width()), math.ceil(path.boundingRect().height()))
-            #     output.fill(Qt.GlobalColor.transparent)
-            #     painter = QPainter(output)
-            #     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            #     painter.fillPath(path.translated(-path.boundingRect().topLeft()), QColor(255, 255, 255))
-            #     out_file = f"log_images/{text}_true.png"
-            #     output.save(out_file, "png")
-            #     painter.end()
             font_key = f"{font.family() if hasattr(font, 'family') else 'N/A'}"
             if font_key not in LOGGED_FONTS:
                 logger.debug(
@@ -55,16 +44,6 @@ def getTextPath(font, text, alignment):
             # get_path_lock.unlock()
             return path
         if path.boundingRect().height() < 3 or i > 0:
-            # output = QPixmap(math.ceil(path.boundingRect().width()), math.ceil(path.boundingRect().height()))
-            # output.fill(Qt.GlobalColor.transparent)
-            # painter = QPainter(output)
-            # painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            # painter.fillPath(path.translated(-path.boundingRect().topLeft()), QColor(255, 255, 255))
-            # out_file = f"log_images/{text}.png"
-            # output.save(out_file, "png")
-            # painter.end()
-            # print(lines, line_height, max_width, widths, path.boundingRect().width(), path.boundingRect().height())
-            # print((max_width - widths[0]) / 2, line_height * 0)
             print("Failed", {"family": QFontInfo(font).family(), "pointSize": QFontInfo(font).pointSize(), "pixelSize": QFontInfo(font).pixelSize(), "weight": QFontInfo(font).weight(), "italic": QFontInfo(font).italic(), "styleName": QFontInfo(font).styleName(), "styleHint": QFontInfo(font).styleHint(), "fixedPitch": QFontInfo(font).fixedPitch(), "exactMatch": QFontInfo(font).exactMatch(), "style": QFontInfo(font).style()})
             print(metrics.height(), metrics.ascent(), metrics.descent(), metrics.leading(), metrics.lineSpacing())
     # get_path_lock.unlock()
@@ -99,18 +78,11 @@ class OutlinedLabel(QLabel):
 
         self.right_pad = False
         self.use_scale = True
-        # Reserved space on each side that the fit-to-width scaling below
-        # should not render into (e.g. the timestamp end-caps) -- text still
-        # never gets cropped, it just scales down enough to clear this
-        # margin instead of only clearing the label's full raw width.
+
         self.horizontal_margin = 0
 
         self.setBrush(brushcolor)
         self.setPen(linecolor)
-
-        # global FONT_DB
-        # if not FONT_DB:
-        #     FONT_DB = QFontDatabase
 
     def setLineWidth(self, width):
         self.w = width
@@ -128,12 +100,6 @@ class OutlinedLabel(QLabel):
 
     @opacity.setter
     def opacity(self, value):
-        # if value < 1:
-        #     self.frame_counter += 1
-        # else:
-        #     print("Frame Counter: ", self.frame_counter)
-        #     self.frame_counter = 0
-        # print("opacity: ", value)
         self._opacity = value
         self.update()
 
@@ -196,12 +162,6 @@ class OutlinedLabel(QLabel):
     @font_family.setter
     def font_family(self, value):
         f = QFont("Times New Roman")
-        # if len(QFontDatabase.families()) != 0:
-        #     QFontDatabase.removeAllApplicationFonts()
-        # families = self.font_db.families()
-
-        # for family in families:
-        #     print(family)
 
         if not any([_ in value.lower() for _ in [".ttf", ".otf", ".ttc"]]):
             f.setFamily(value)
@@ -240,7 +200,7 @@ class OutlinedLabel(QLabel):
                 f.setPointSize(current_point_size)
             else:
                 # Last resort: use a reasonable default
-                f.setPixelSize(24)
+                f.setPixelSize(22)
         else:
             f.setPixelSize(current_pixel_size)
 
@@ -373,23 +333,8 @@ class OutlinedLabel(QLabel):
                 self._indent = [w] * 4
         else:
             self._indent = [self.indent()] * 4
-        # if self.alignment() & Qt.AlignmentFlag.AlignLeft:
-        #     x = rect.left() + indent - min(metrics.leftBearing(self.text()[0]), 0)
-        # elif self.alignment() & Qt.AlignmentFlag.AlignRight:
-        #     x = rect.x() + rect.width() - indent - tr.width()
-        # else:
-        #     x = (rect.width() - tr.width()) / 2
 
-        # if self.alignment() & Qt.AlignmentFlag.AlignTop:
-        #     y = rect.top() + indent + metrics.ascent()
-        # elif self.alignment() & Qt.AlignmentFlag.AlignBottom:
-        #     y = rect.y() + rect.height() - indent - metrics.descent()
-        # else:
-        #     y = (rect.height() + metrics.ascent() - metrics.descent()) / 2
-
-        # print(self.text()[0], len(self.text()[0]))
         longest = max([_ for _ in self.text().split("\n")], key=len)
-
 
         try:
             self._indent[1] -= min(metrics.leftBearing(longest[0]), -2)
@@ -415,11 +360,8 @@ class OutlinedLabel(QLabel):
         # print(metrics.height(), metrics.descent(), metrics.ascent())
         # print(self._indent)
 
-
-
         self.path_mutex.unlock()
         self.updatePixmap()
-
 
     def updatePixmap(self):
         if not self.qmap_mutex.tryLock():
@@ -461,7 +403,6 @@ class OutlinedLabel(QLabel):
             return
         qp = QPainter(self)
 
-        # GPU-optimized rendering hints for RTX 4050
         qp.setRenderHints(
             QPainter.RenderHint.Antialiasing |
             QPainter.RenderHint.SmoothPixmapTransform |
@@ -496,30 +437,6 @@ class OutlinedLabel(QLabel):
         else:
             y = (self.height() - qmap.height()) // 2
 
-        # in_motion = self.scale != 1 or self.x_pos != 0 or self.y_pos != 0
-        # if in_motion:
-        #     pos = ((x + self.x_pos), (y + self.y_pos))
-        #     pos_1 = (math.floor((x + self.x_pos)), math.floor((y + self.y_pos)))
-        #     pos_2 = (math.ceil((x + self.x_pos)), math.ceil((y + self.y_pos)))
-        #     dis_1 = math.sqrt((pos_1[0] - pos[0]) ** 2 + (pos_1[1] - pos[1]) ** 2)
-        #     dis_2 = math.sqrt((pos_2[0] - pos[0]) ** 2 + (pos_2[1] - pos[1]) ** 2)
-
-        #     if dis_1 != 0:
-        #         new_map = QPixmap(qmap.width() + (1 if (pos_1[0] != pos_2[1]) else 0), qmap.height() + (1 if (pos_1[1] != pos_2[1]) else 0))
-        #         new_map.fill(Qt.GlobalColor.transparent)
-        #         painter = QPainter(new_map)
-        #         # painter.setOpacity(self.opacity * min(1, dis_2 / (dis_1 + dis_2 + 0.00001)))
-        #         painter.drawPixmap(0, 0, qmap)
-        #         # painter.setCompositionMode(QPainter.CompositionMode_ColorDodge)
-        #         painter.setOpacity(self.opacity * min(1, dis_1 / (dis_1 + dis_2 + 0.00001)))
-        #         painter.drawPixmap(1 if (pos_1[0] != pos_2[1]) else 0, 1 if (pos_1[1] != pos_2[1]) else 0, qmap.copy(QRect(0, 0, qmap.width()//2, qmap.height())))
-        #         painter.end()
-        #         qmap = new_map
-        #     qp.drawPixmap(pos_1[0], pos_1[1], qmap)
-        #     # qp.drawPixmap(int((x + self.x_pos)), int((y + self.y_pos)), qmap)
-        #     # print("motion", pos, pos_1, pos_2, self.opacity * dis_2 / (dis_1 + dis_2 + 0.00001), self.opacity * dis_1 / (dis_1 + dis_2 + 0.00001))
-        # else:
-        #     qp.drawPixmap(int((x + self.x_pos)), int((y + self.y_pos)), qmap)
         qp.drawPixmap(int((x + self.x_pos)), int((y + self.y_pos)), qmap)
         qp.end()
         self.qmap_mutex.unlock()
@@ -529,10 +446,6 @@ class OutlinedLabel(QLabel):
         self.updatePath()
 
     def setHorizontalMargin(self, margin):
-        """Reserve `margin` px on each side that fitted text should scale
-        down to avoid, rather than render into (e.g. the timestamp
-        end-caps). Text is never cropped either way -- this only changes
-        how much it shrinks to fit."""
         if margin == self.horizontal_margin:
             return
         self.horizontal_margin = margin

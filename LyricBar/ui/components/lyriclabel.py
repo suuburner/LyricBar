@@ -21,9 +21,9 @@ class LyricAnimation(QAbstractAnimation):
         self.sustaining = self.get_interpolation_function(sustaining)
         self.leaving = self.get_interpolation_function(leaving)
 
-        # INSTANT appearance - no fade effects for maximum performance
-        self.entering_time = 0  # 0ms = instant flash-in
-        self.leaving_time = 0   # 0ms = instant flash-out
+        # no fade effects for maximum performance
+        self.entering_time = 0
+        self.leaving_time = 0
         self.sustaining_time = 3000
 
         self.last_frame_type = None
@@ -98,7 +98,6 @@ class LyricAnimation(QAbstractAnimation):
             self.target.applyValues(reset=True)
         self.last_frame_type = "sustaining"
         if self.sustaining is not None:
-            # print("SUSTAINING", self.sustaining(((time - entering_time) % self.sustaining_time)/ (self.sustaining_time)))
             return self.sustaining(((time - entering_time) % self.sustaining_time)/ (self.sustaining_time))
         return {}
 
@@ -164,15 +163,6 @@ class LyricLabel(OutlinedLabel):
         self.front_imagepad.show()
         self.progress_ring.show()
 
-        # Explicit stacking order, bottom to top. This used to rely on
-        # incidental widget-creation order (back_imagepad is constructed
-        # before back_pad, so Qt's default sibling stacking happened to put
-        # back_pad above it) with nothing guaranteeing it stays that way.
-        # That's exactly the kind of thing that's easy to silently break --
-        # and if it ever didn't hold, the border (drawn on back_pad) would
-        # render *underneath* an opaque background-image theme's photo and
-        # simply never be seen, which matches themes where the border
-        # looked invisible.
         self.back_imagepad.raise_()
         self.back_pad.raise_()
         self.front_imagepad.raise_()
@@ -217,28 +207,15 @@ class LyricLabel(OutlinedLabel):
         self.update()
 
     def _timestamp_layout_metrics(self):
-        """Shared geometry math for the timestamp labels, used by both
-        setFixedSize (position + margin) and setStyle (margin only, so
-        toggling timestamps on/off takes effect immediately instead of
-        waiting for the next resize/move to happen to recompute it)."""
         timestamp_height = 12
         timestamp_width = 40
-        edge_gap = 4  # tight to the very edge, not floating inward
+        edge_gap = 4
         end_cap_margin = int(max(4, self.rounded_radius // 3)) + edge_gap
         return end_cap_margin, timestamp_width, timestamp_height, edge_gap
 
     def _apply_horizontal_margin(self):
-        """Reserve room for the timestamps in the lyric text's own
-        fit-to-width scaling only when they're actually visible -- with
-        them hidden there's no timestamp footprint to clear, just a small
-        fixed gap so text doesn't render flush against the bar's edge."""
         end_cap_margin, timestamp_width, _, _ = self._timestamp_layout_metrics()
         if self._timestamps_visible:
-            # timestamp_width (40px) is the label box's full width, not the
-            # rendered digits' width ("0:00" etc. is narrower than that) --
-            # so the box already has slack built in before lyric text needs
-            # to start clearing it. -6 eats into that slack instead of
-            # padding past the box's far edge, tightening the visual gap.
             self.setHorizontalMargin(end_cap_margin + timestamp_width - 2)
         else:
             self.setHorizontalMargin(4)
@@ -251,9 +228,6 @@ class LyricLabel(OutlinedLabel):
         self.front_imagepad.setGeometry(0, 0, width, height)
         self.progress_ring.setGeometry(0, 0, width, height)
 
-        # Timestamps live tucked into the pill's rounded end-caps (the
-        # corner space lyric text doesn't reach) rather than flanking a
-        # separate linear bar -- the ring itself is the progress display.
         end_cap_margin, timestamp_width, timestamp_height, _ = self._timestamp_layout_metrics()
         timestamp_y = (height - timestamp_height) // 2
 
@@ -330,12 +304,6 @@ class LyricLabel(OutlinedLabel):
                 px = QPixmap(resource_path(kwargs[f"{key}-image"]))
                 target_w, target_h = max(1, self.width()), max(1, self.height())
                 if px.width() > 0 and px.height() > 0:
-                    # "Cover" scale (like CSS background-size: cover): grow
-                    # the image, preserving aspect ratio, until both
-                    # dimensions are at least the bar's size, then crop the
-                    # overflow centered. No distortion (unlike a plain
-                    # stretch) and no empty space left over (unlike scaling
-                    # to height alone, the old behavior).
                     px = px.scaled(target_w, target_h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
                     if px.width() > target_w or px.height() > target_h:
                         x_off = max(0, (px.width() - target_w) // 2)
@@ -397,22 +365,11 @@ class LyricLabel(OutlinedLabel):
                 color_str = f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()})"
                 font_size = kwargs.get("font-size", "30px")
                 font_family = kwargs.get("font-family", "Arial, sans-serif")
-                # Keep timestamps smaller than lyrics but still readable.
-                # Keep timestamps small and stable regardless of how big a
-                # theme's own lyric font-size is -- this used to scale
-                # directly off the raw theme font-size with only a lower
-                # bound, so a theme authored with e.g. 50px lyrics produced
-                # a ~40px timestamp trying to fit a 12px-tall box. Clamped
-                # to a sensible range instead.
                 timestamp_size = min(12, max(10, int(float(font_size.replace("px", "")) * 0.85) - 2))
                 style = f"background-color: transparent; color: {color_str}; font-size: {timestamp_size}px; font-family: {font_family};"
                 self.timestamp_left.setStyleSheet(style)
                 self.timestamp_right.setStyleSheet(style)
 
-        # NOTE: the ring has no separate "track" color to wire up like the
-        # old linear ProgressBar did (progress-line-color/line-color) -- it
-        # draws directly over the bar's own border, which is already
-        # theme-colored, so the border itself doubles as the ring's track.
         self.progress_ring.thickness = float(kwargs.get("border-width", 2.5)) + 0.5
 
         if "use-shadow" in kwargs and kwargs["use-shadow"]:

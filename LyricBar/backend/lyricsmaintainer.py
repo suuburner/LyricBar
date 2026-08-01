@@ -207,7 +207,7 @@ class LyricsMaintainer():
                 return
 
         # Use timeout lock to prevent deadlocks
-        if not self.lyrics_mutex.tryLock(500):  # Reduced timeout for faster response
+        if not self.lyrics_mutex.tryLock(500):
             logger.warning("Could not acquire lyrics mutex in set_lyrics - skipping update")
             return
 

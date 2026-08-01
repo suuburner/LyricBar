@@ -1,5 +1,4 @@
-"""In-app log viewer -- replaces the old OS-console "debug console" feature.
-
+"""In-app log viewer
 Why this exists instead of AllocConsole():
 Windows' own docs are explicit that a registered console control handler
 returning TRUE for CTRL_CLOSE_EVENT does NOT prevent the process from being
@@ -18,13 +17,10 @@ from PyQt5.QtWidgets import QDialog, QPlainTextEdit, QVBoxLayout
 
 from LyricBar.config import resource_path
 
-MAX_LOG_LINES = 2000  # cap so a long-running session doesn't grow this unbounded
+MAX_LOG_LINES = 2000
 
 
 class _QtLogSignal(QObject):
-    # logging can be called from worker threads (QThread subclasses elsewhere
-    # in the app); Qt widgets may only be touched from the GUI thread. Routing
-    # through a signal/slot marshals the append back onto the main thread.
     new_line = pyqtSignal(str)
 
 
@@ -57,9 +53,7 @@ class QtLogHandler(logging.Handler):
 
 
 class LogViewerDialog(QDialog):
-    """A non-modal, hide-on-close log window. Created once and reused --
-    closing it just hides it, it never tears down the QApplication."""
-
+    """A simple dialog that shows a QPlainTextEdit and forwards log messages to it."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("LyricBar Debug Console")
@@ -91,9 +85,6 @@ class LogViewerDialog(QDialog):
         self.handler.setLevel(logging.DEBUG)
 
     def closeEvent(self, event):
-        # Hide instead of closing/destroying -- this window's lifecycle is
-        # independent of the console concept entirely; there's nothing here
-        # that can take the rest of the app down with it.
         event.ignore()
         self.hide()
 

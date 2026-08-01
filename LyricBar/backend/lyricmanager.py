@@ -81,12 +81,8 @@ class Lyrics:
             self._cursor_index = -1
             return None
 
-        # Read live from settings (positive = earlier, negative = later) so a
-        # timing-offset change from the settings dialog takes effect immediately,
-        # instead of the value being frozen to whatever it was at import time.
         adjusted_timestamp = timestamp + settings.global_offset + self.track_offset
 
-        # Cursor-based lookup avoids full scans every frame and keeps UI updates tight.
         idx = self._cursor_index
         if idx < 0 or idx >= len(self.lines):
             idx = -1
