@@ -1,6 +1,7 @@
-import logging
 # Lazy import for vosk - only import when actually used
 # This allows the executable to build without vosk
+import pyaudio
+
 try:
     from vosk import Model, KaldiRecognizer
     VOSK_AVAILABLE = True
@@ -8,14 +9,12 @@ except ImportError:
     Model = None
     KaldiRecognizer = None
     VOSK_AVAILABLE = False
-    
-import pyaudio
+
 from PyQt5.QtCore import pyqtSignal, QMutex, QObject, QThread
 
 from LyricBar.utils.dataclasses import PlayingStatusTrigger
 from LyricBar.globalvariables import STT_MODEL_PATH, STT_TRACKING_INPUT
 from LyricBar.backend.lyricmanager import LyricLine
-from datetime import datetime
 
 
 class STTThread(QThread):
@@ -24,19 +23,19 @@ class STTThread(QThread):
         self.model = model
         self.recognizer = recognizer
         self.stream = stream
-        
+
         self.cancelled = False
         self.text = ""
         self.timestamp = -4
-        
+
         self.update_time = True
-        
+
     def cancel(self):
         self.cancelled = True
-    
+
     def gracefully_out(self):
         self.deleteLater()
-        
+
     def format_text(self, text, length=10):
         words = text.split()
         # if len(words) % 15 > 5:
@@ -50,8 +49,8 @@ class STTThread(QThread):
             return "👂"
         return " ".join(words[-length:]) + " ___"
         # return " ".join(words[(len(words)//15-1)*15:])
-        
-        
+
+
     def run(self):
         self.stream.start_stream()
         while not self.cancelled:
@@ -80,29 +79,29 @@ class STTThread(QThread):
         # except Exception as e:
         #     print(e)
         self.gracefully_out()
-    
-        
+
+
 class STTMaintainer(QObject):
     start_signal = pyqtSignal()
     stop_signal = pyqtSignal()
     def __init__(self, now_playing, update_callback=None):
         super().__init__()
-        
+
         self.update_callback = update_callback
-        
+
         self.now_playing = now_playing
-        
+
         self.callback_mutex = QMutex()
         self.caption_mutex = QMutex()
-        
+
         self.now_playing = now_playing
         self.now_playing.register_callback(self.manager_callback)
-            
+
         self.current_line = None
-        
+
         self.model = None
         self.recognizer = None
-        
+
         # Only try to initialize vosk if it's available
         if VOSK_AVAILABLE:
             try:
@@ -112,12 +111,12 @@ class STTMaintainer(QObject):
                 print("Failed to load STT model")
         else:
             print("Vosk not available - STT functionality disabled")
-        
+
         mic = pyaudio.PyAudio()
 
         self.stream = None
         device_index = None
-        
+
         for i in range(0, mic.get_device_count()):
             if STT_TRACKING_INPUT in mic.get_device_info_by_index(i)['name']:
                 device_index = i
@@ -127,31 +126,31 @@ class STTMaintainer(QObject):
         else:
             print(f"Found System Loopback device {STT_TRACKING_INPUT} at index {device_index}")
             self.stream = mic.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=8192, input_device_index=device_index)
-            
+
         self.start_signal.connect(self.start_listen)
         self.stop_signal.connect(self.stop_listen)
-        
+
         self.running = False
         self.running_mutex = QMutex()
-        
+
         # self.line = LyricLine(-2, "♬")
-        
+
         self.stt_thread = None
-        
+
         self.stopped = False
-        
+
     def start(self):
         if self.model is None or self.recognizer is None or self.stream is None:
             return
         self.stopped = False
         self.now_playing.activate(self.manager_callback)
-        
+
     def pause(self):
         if self.stopped:
             return
         self.stopped = True
         self.stop_signal.emit()
-        
+
     @property
     def line(self):
         if not self.running_mutex.tryLock(0):
@@ -165,7 +164,7 @@ class STTMaintainer(QObject):
         l = LyricLine(self.stt_thread.timestamp, self.stt_thread.text)
         self.running_mutex.unlock()
         return l
-        
+
     def start_listen(self):
         if not self.running_mutex.tryLock(1000):
             return
@@ -179,11 +178,11 @@ class STTMaintainer(QObject):
                 self.stt_thread.cancel()
             except:
                 pass
-        
+
         self.stt_thread = STTThread(self.model, self.recognizer, self.stream)
         self.stt_thread.start()
         self.running_mutex.unlock()
-        
+
     def stop_listen(self):
         if not self.running_mutex.tryLock(1000):
             return
@@ -196,11 +195,11 @@ class STTMaintainer(QObject):
         # self.line = LyricLine(-2, "♬")
         self.running = False
         self.running_mutex.unlock()
-        
-        
+
+
     def next_source(self):
         pass
-    
+
     def manager_callback(self, value):
         if self.stopped:
             return
@@ -214,21 +213,18 @@ class STTMaintainer(QObject):
             self.start_signal.emit()
         self.callback_mutex.unlock()
         return
-    
+
     def get_from_next_source(self):
         pass
-    
+
     def set_empty(self):
         pass
-    
-    
+
+
     @property
     def track_offset(self):
         return 0
-    
+
     @track_offset.setter
     def track_offset(self, value):
         pass
-
-        
-    

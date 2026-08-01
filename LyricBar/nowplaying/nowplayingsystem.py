@@ -79,11 +79,11 @@ class NowPlayingSystem(NowPlaying):
             return True
         if new_playing_info.current_track != old_playing_info.current_track:
             return True
-        if new_playing_info.last_updated_time != old_playing_info.last_updated_time: 
+        if new_playing_info.last_updated_time != old_playing_info.last_updated_time:
             # print("Time Gap: %.9f"%(new_playing_info.last_updated_time - old_playing_info.last_updated_time))
             return True
         return False
-    
+
     def track_check(self, old_playing_info, new_playing_info):
         if old_playing_info is None or new_playing_info is None:
             return True
@@ -100,13 +100,10 @@ class NowPlayingSystem(NowPlaying):
             return
         info = asyncio.run(self.get_now_playing_info())
 
+        was_initialized = self.is_initialized
+
         if info is not None:
             self._none_streak = 0
-            # We got a real response from the media session (playing or not) -
-            # from here on, a later "no response" tick is a genuine session
-            # loss/hiccup, not "first time starting up", so it shouldn't wipe
-            # already-good state.
-            self.is_initialized = True
         else:
             self._none_streak += 1
             if self._none_streak < self._NONE_STREAK_TO_DROP and self.playing_info is not None:
@@ -116,10 +113,32 @@ class NowPlayingSystem(NowPlaying):
                 self.sync_mutex.unlock()
                 return
 
-        if not self.is_initialized and (info is None or not info.is_playing):
+        # We've made a real, determinate observation now (a session that
+        # exists and is/isn't playing, or a confirmed absence of one past
+        # the transient-blip streak) -- from here on, a later "no response"
+        # tick is a genuine session loss/hiccup, not "first time starting
+        # up", so it shouldn't wipe already-good state.
+        #
+        # NOTE: this used to be set True unconditionally the moment
+        # `info is not None`, *before* checking whether that info actually
+        # indicated anything was playing. A real-but-idle session (a
+        # background app with a registered media session that's simply
+        # never played anything) satisfies `info is not None` on the very
+        # first tick, which set this True before the guard below ever ran
+        # -- so the guard's `not self.is_initialized` was already false by
+        # the time it was checked, and that branch (the ONLY place that
+        # ever tells the UI "nothing to show") got skipped. Since no later
+        # branch matches a session that's never actually played anything
+        # either, zero callbacks fired, ever -- the UI never learned there
+        # was nothing to show, and just sat on its initial `self.show()`
+        # state forever. Comparing against `was_initialized` (this flag's
+        # value from *before* this tick) instead fixes that self-defeating
+        # race without touching what the flag means anywhere else it's read.
+        self.is_initialized = True
+
+        if not was_initialized and (info is None or not info.is_playing):
             # More generic message when waiting for any music session
             logger.info("Waiting for music")
-            self.is_initialized = True
             self.playing_info = None
             if self.update_callback is not None:
                 self.update_callback(PlayingStatusTrigger.PAUSE)
@@ -127,7 +146,6 @@ class NowPlayingSystem(NowPlaying):
             return
         if info is None and self.playing_info is not None:
             logger.info("%s closed", self.last_matched_tracking_app or self.app_id)
-            self.is_initialized = True
             self.playing_info = None
             if self.update_callback is not None:
                 self.update_callback(PlayingStatusTrigger.PAUSE)
@@ -153,23 +171,40 @@ class NowPlayingSystem(NowPlaying):
 
             # Reset sync animation counter for new track
             self.sync_animation_frame = 0
-            
+
             # Fix for Windows Media API bug: When track changes, API sends new metadata but with old position
             # Reset begin time to current time (position 0) to avoid timestamp carryover from previous track
             if self.playing_info is not None and info.current_track != self.playing_info.current_track:
                 from datetime import datetime
                 logger.debug("Resetting begin time to now (Windows Media API timestamp carryover fix)")
                 info.current_begin_time = datetime.now().timestamp() * 1000
-            
+
             # Replace the old playing_info with the new one
             if self.playing_info is not None:
                 self.playing_info.update(info)
             else:
                 self.playing_info = info
-            
-            if self.update_callback is not None and (self.playing_info.current_track_artist != "" or self.playing_info.current_track_title != ""):
-                logger.debug("Triggering NEW_TRACK callback")
-                self.update_callback(PlayingStatusTrigger.NEW_TRACK)
+
+            has_track_metadata = (
+                self.playing_info.current_track_artist != "" or self.playing_info.current_track_title != ""
+            )
+            if self.update_callback is not None:
+                if has_track_metadata:
+                    logger.debug("Triggering NEW_TRACK callback")
+                    self.update_callback(PlayingStatusTrigger.NEW_TRACK)
+                else:
+                    # is_playing=True with no artist/title at all isn't a
+                    # real track -- some background media sources (e.g. an
+                    # idle browser tab, or a widget/app that merely *has* a
+                    # media session registered with the OS) report exactly
+                    # this. Previously this case fell through without
+                    # calling update_callback at all, so the UI never found
+                    # out and just kept showing whatever was on screen
+                    # before -- typically the default 0:00/0:00 placeholder
+                    # state -- indefinitely. Treat it like "no music" so the
+                    # bar hides instead of sitting there forever.
+                    logger.debug("Ignoring media session with no track metadata (blank artist/title)")
+                    self.update_callback(PlayingStatusTrigger.PAUSE)
             self.sync_mutex.unlock()
             return
         if info.is_playing and not self.playing_info.is_playing:
@@ -281,7 +316,7 @@ class NowPlayingSystem(NowPlaying):
             logger.debug(f"Switching from {self.app_id} to {current_app_id}")
             self.app_id = current_app_id
             self.session = current_session
-            
+
         if self.session is not None:
             info_dict = dict()
             try:

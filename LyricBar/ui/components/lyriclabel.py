@@ -1,14 +1,14 @@
 from datetime import datetime
-from LyricBar.ui.components.utils import convert_to_color
-from LyricBar.ui.components.progressring import ProgressRing
-from LyricBar.ui.components.pad import Pad
-from LyricBar.ui.components.outlinedlabel import OutlinedLabel
-from PyQt5.QtWidgets import QLabel
+
+from PyQt5.QtCore import QAbstractAnimation, QPropertyAnimation, Qt, pyqtProperty
+from PyQt5.QtGui import QBrush, QColor, QPainter, QPainterPath, QPixmap
+from PyQt5.QtWidgets import QGraphicsDropShadowEffect, QLabel
+
 from LyricBar.config import resource_path
-from PyQt5.QtCore import Qt, QPropertyAnimation, QRect, QSequentialAnimationGroup, QAbstractAnimation
-from PyQt5.QtGui import QBrush, QColor, QPixmap, QGradient, QPainterPath, QPainter
-from PyQt5.QtWidgets import QGraphicsDropShadowEffect
-from PyQt5.QtCore import pyqtProperty
+from LyricBar.ui.components.outlinedlabel import OutlinedLabel
+from LyricBar.ui.components.pad import Pad
+from LyricBar.ui.components.progressring import ProgressRing
+from LyricBar.ui.components.utils import convert_to_color
 
 
 class LyricAnimation(QAbstractAnimation):
@@ -20,14 +20,14 @@ class LyricAnimation(QAbstractAnimation):
         self.entering = self.get_interpolation_function(entering)
         self.sustaining = self.get_interpolation_function(sustaining)
         self.leaving = self.get_interpolation_function(leaving)
-        
+
         # INSTANT appearance - no fade effects for maximum performance
         self.entering_time = 0  # 0ms = instant flash-in
         self.leaving_time = 0   # 0ms = instant flash-out
         self.sustaining_time = 3000
-        
+
         self.last_frame_type = None
-        
+
     def setAnimation(self, **kwargs):
         if "entering" in kwargs:
             self.entering = self.get_interpolation_function(kwargs["entering"])
@@ -35,13 +35,13 @@ class LyricAnimation(QAbstractAnimation):
             self.sustaining = self.get_interpolation_function(kwargs["sustaining"])
         if "leaving" in kwargs:
             self.leaving = self.get_interpolation_function(kwargs["leaving"])
-            
+
     def start(self, direction=1):
         self.currentTime = 0
         self.direction = direction
         self.target.applyValues(reset=True)
         super().start()
-        
+
     def get_interpolation_function(self, props):
         if props is None:
             return lambda x: {}
@@ -59,7 +59,7 @@ class LyricAnimation(QAbstractAnimation):
                         ret[property_name] =  weight * right_v + (1 - weight) * left_v
             return ret
         return get_stage_value
-    
+
     def get_value(self, time):
         if self.duration() < 0:
             entering_time = self.entering_time
@@ -101,62 +101,62 @@ class LyricAnimation(QAbstractAnimation):
             # print("SUSTAINING", self.sustaining(((time - entering_time) % self.sustaining_time)/ (self.sustaining_time)))
             return self.sustaining(((time - entering_time) % self.sustaining_time)/ (self.sustaining_time))
         return {}
-    
+
     def setDuration(self, duration):
         self._duration = duration
-        
+
     def duration(self):
         return self._duration
-    
+
     def updateCurrentTime(self, currentTime: int) -> None:
         value = self.get_value(currentTime)
         # print(value)
         self.target.applyValues(**value)
         return
-      
+
 
 class LyricLabel(OutlinedLabel):
     def __init__(self, text=None, parent=None, **kwargs):
-        
+
         self._rounded_radius = 0
         self._timestamps_visible = True
-        
-        
+
+
         self.back_imagepad = QLabel("", parent=parent)
         self.back_imagepad.setStyleSheet("background-color: transparent")
         self.back_imagepad.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.back_pad = Pad(QBrush(QColor(0,0,0,0)), parent=parent)
         self.back_pad.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         self.animation = None
         self.entering = None
         self.sustaining = None
         self.leaving = None
-        
+
         super().__init__(text=text, relative_outline=False, linewidth=0, brushcolor=QColor(0,0,0,0), linecolor=QColor(0,0,0,0), parent=parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         self.front_imagepad = QLabel("", parent=parent)
         self.front_imagepad.setStyleSheet("background-color: transparent")
         self.front_imagepad.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.front_pad = Pad(QBrush(QColor(0,0,0,0)), parent=parent)
         self.front_pad.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         self.progress_ring = ProgressRing(parent=parent)
-        
+
         # Create separate timestamp labels with independent height
         self.timestamp_left = QLabel("0:00", parent=parent)
         self.timestamp_left.setStyleSheet("background-color: transparent; color: white;")
         self.timestamp_left.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        
+
         self.timestamp_right = QLabel("0:00", parent=parent)
         self.timestamp_right.setStyleSheet("background-color: transparent; color: white;")
         self.timestamp_right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
+
         self.glow_color = QColor(0, 0, 0, 200)
-        
+
         self.setStyle(**kwargs)
-        
+
         self.back_pad.show()
         self.back_imagepad.show()
         self.show()
@@ -181,11 +181,11 @@ class LyricLabel(OutlinedLabel):
         self.timestamp_left.raise_()
         self.timestamp_right.raise_()
         self.progress_ring.raise_()
-        
+
     @pyqtProperty(float)
     def rounded_radius(self):
         return self._rounded_radius
-    
+
     @rounded_radius.setter
     def rounded_radius(self, value):
         self._rounded_radius = value
@@ -200,12 +200,12 @@ class LyricLabel(OutlinedLabel):
         self.back_pad.update()
         self.front_pad.update()
         self.progress_ring.update()
-        
-    
+
+
     @pyqtProperty(float)
     def opacity(self):
         return self._opacity
-    
+
     @opacity.setter
     def opacity(self, value):
         self._opacity = value
@@ -215,7 +215,7 @@ class LyricLabel(OutlinedLabel):
             color.setAlphaF(color.alphaF() * value)
             glow.setColor(color)
         self.update()
-        
+
     def _timestamp_layout_metrics(self):
         """Shared geometry math for the timestamp labels, used by both
         setFixedSize (position + margin) and setStyle (margin only, so
@@ -277,10 +277,10 @@ class LyricLabel(OutlinedLabel):
 
         self.timestamp_left.move(x + end_cap_margin, timestamp_y)
         self.timestamp_right.move(x + self.width() - end_cap_margin - timestamp_width, timestamp_y)
-        
+
     def paintEvent(self, event):
         super().paintEvent(event)
-        
+
     def setHidden(self, hidden):
         self.back_pad.setHidden(hidden)
         self.back_imagepad.setHidden(hidden)
@@ -288,7 +288,7 @@ class LyricLabel(OutlinedLabel):
         self.front_pad.setHidden(hidden)
         self.front_imagepad.setHidden(hidden)
         self.progress_ring.setHidden(hidden)
-            
+
     def setStyle(self, **kwargs):
         show_progress = kwargs.get("progress-visible", True)
         self.progress_ring.setVisible(show_progress)
@@ -316,15 +316,15 @@ class LyricLabel(OutlinedLabel):
             self.flip = kwargs["flip-text"]
         else:
             self.flip = False
-            
-            
+
+
         if "line-color" in kwargs:
             self.setPen(convert_to_color(kwargs["line-color"]))
         if "line-width" in kwargs:
             self.setLineWidth(kwargs["line-width"])
-        
+
         for key, ip, p in [("background", self.back_imagepad, self.back_pad), ("foreground", self.front_imagepad, self.front_pad)]:
-        
+
             if f"{key}-image" in kwargs:
                 p.setColor(QColor(0,0,0,0))
                 px = QPixmap(resource_path(kwargs[f"{key}-image"]))
@@ -374,7 +374,7 @@ class LyricLabel(OutlinedLabel):
             self.progress_ring.color = convert_to_color(kwargs["progress-color"])
         elif "font-color" in kwargs:
             self.progress_ring.color = convert_to_color(kwargs["font-color"])
-        
+
         # Set timestamp label colors from theme (priority: font-color > line-color > shadow-color)
         if "font-color" in kwargs:
             font_color_val = kwargs["font-color"]
@@ -408,13 +408,13 @@ class LyricLabel(OutlinedLabel):
                 style = f"background-color: transparent; color: {color_str}; font-size: {timestamp_size}px; font-family: {font_family};"
                 self.timestamp_left.setStyleSheet(style)
                 self.timestamp_right.setStyleSheet(style)
-            
+
         # NOTE: the ring has no separate "track" color to wire up like the
         # old linear ProgressBar did (progress-line-color/line-color) -- it
         # draws directly over the bar's own border, which is already
         # theme-colored, so the border itself doubles as the ring's track.
         self.progress_ring.thickness = float(kwargs.get("border-width", 2.5)) + 0.5
-            
+
         if "use-shadow" in kwargs and kwargs["use-shadow"]:
             glow = QGraphicsDropShadowEffect()
             self.glow_color = convert_to_color(kwargs["shadow-color"])
@@ -424,7 +424,7 @@ class LyricLabel(OutlinedLabel):
             self.setGraphicsEffect(glow)
         elif "use-shadow" in kwargs and not kwargs["use-shadow"]:
             self.setGraphicsEffect(None)
-        
+
         if "entering" in kwargs:
             entering = kwargs["entering"]
             if entering == "fadein":
@@ -471,9 +471,9 @@ class LyricLabel(OutlinedLabel):
                 self.sustaining = [("scale", [(0, 1), (0.5, 0.9), (1, 1)])]
             else:
                 self.sustaining = None
-        
 
-                
+
+
     def applyValues(self, reset=False, **kwargs):
         if "scale" in kwargs:
             self.scale = kwargs["scale"]
@@ -491,7 +491,7 @@ class LyricLabel(OutlinedLabel):
             self.y_pos = kwargs["y_pos"]
         elif reset:
             self.y_pos = 0
-    
+
     def adjustLineProgress(self, line_progress):
         if self.animation is not None:
             if self.animation.state() == QPropertyAnimation.Running:
@@ -502,7 +502,7 @@ class LyricLabel(OutlinedLabel):
             self.applyValues(reset=True)
             self.animation.setCurrentTime(line_progress)
             self.animation.resume()
-                
+
     def setText(self, text, use_animation=True, duration=None, start_time=None):
         # print(text, use_animation, duration, start_time)
         super().setText(text)
@@ -515,7 +515,7 @@ class LyricLabel(OutlinedLabel):
                 duration = int(duration)
         else:
             duration = -1
-        
+
         # PYQT5
         # if self.animation is not None and self.animation.state() == QPropertyAnimation.Running:
         #     self.animation.stop()
@@ -540,10 +540,10 @@ class LyricLabel(OutlinedLabel):
                     self.animation.setCurrentTime(0)
         else:
             self.animation = None
-            
+
     def setProgress(self, progress, current_ms=0, total_ms=0):
         self.progress_ring.setProgress(progress)
-        
+
         # Update timestamp labels
         if total_ms > 0:
             current_str = self._format_time(current_ms)
@@ -553,7 +553,7 @@ class LyricLabel(OutlinedLabel):
         else:
             self.timestamp_left.setText("0:00")
             self.timestamp_right.setText("0:00")
-    
+
     def _format_time(self, ms):
         """Convert milliseconds to mm:ss format"""
         seconds = int(ms / 1000)

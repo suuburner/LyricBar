@@ -4,8 +4,8 @@ import sys
 import time
 
 logger = logging.getLogger(__name__)
-from PyQt5.QtCore import Qt, QTimer, QCoreApplication, pyqtSignal, QMutex, QSettings
-from PyQt5.QtGui import QBitmap, QCursor, QFontMetrics, QIcon, QPainter, QPainterPath, QRegion
+from PyQt5.QtCore import QCoreApplication, QEasingCurve, QMutex, QParallelAnimationGroup, QPropertyAnimation, QSettings, QRect, QTimer, Qt, pyqtSignal
+from PyQt5.QtGui import QBitmap, QCursor, QFontMetrics, QIcon, QPainter
 from PyQt5.QtWidgets import (
     QApplication,
     QFrame,
@@ -109,6 +109,11 @@ class LyricsDisplay(QWidget):
     hide_later_signal = pyqtSignal()
     cancel_hide_signal = pyqtSignal()
     callback_signal = pyqtSignal(object)
+    _WINDOW_SETTINGS_GROUP = "WindowSettings"
+    _WINDOW_POSITION_KEY = "barPosition"
+    _WINDOW_POSITION_MODE_KEY = "barPositionMode"
+    _WINDOW_SCREEN_KEY = "barScreen"
+
     def __init__(self, app): #, screen_width, screen_height):
         super().__init__()
         self.app = app
@@ -177,17 +182,11 @@ class LyricsDisplay(QWidget):
         self._base_width = None  # Will be set after position is determined
         self._scale_factor = 1.0  # Current scale factor
 
-        # Cursor update timer for Ctrl key
-        self._cursor_update_timer = QTimer(self)
-        self._cursor_update_timer.timeout.connect(self.updateCursorOnTimer)
-        self._cursor_update_timer.setInterval(50)  # 20 FPS for cursor - sufficient for smooth UX
-
         # Load theme preference only
         self.loadThemeSettings()
 
-        self.setPosition(use_saved=False)
+        self.setPosition(use_saved=True)
         self.show()
-        self.setMouseTracking(True)
 
         self.style_name = "default"
         self.formatter = lambda x: x
@@ -257,13 +256,26 @@ class LyricsDisplay(QWidget):
 
         # Initialize progress bar to 0 on startup
         self.label.setProgress(0)
+
+        # Apply the default theme right away rather than leaving the bar
+        # unstyled until the first track is found -- get_style(None) already
+        # falls back to settings.default_theme just fine (the artist-theme
+        # matching loop is skipped entirely when track is None, not blocked
+        # on it), so there's no ambiguity to wait out here. Once a real
+        # track comes in, handleTrackChange() calls updateStyle() again and
+        # swaps to an artist theme if one matches, same as always.
+        self.updateStyle(get_style(None), force_reload=True)
+
         logger.info("LyricBar ready")
         self._drag_pos = None
         self._is_dragging = False
+        self._startup_animation = None
+        self._startup_ready = False
+        self._welcome_toast_pending = True
         self.setup_debug_console()
 
         self.now_playing.start_loop()
-        self.toast("Welcome to LyricBar", 3000)
+        QTimer.singleShot(0, self.playStartupAnimation)
 
         # self.applyBackgroundEffect()
 
@@ -326,15 +338,6 @@ class LyricsDisplay(QWidget):
         if self.line_mode == 1:
             self.switch_mode()
 
-    # def applyBackgroundEffect(self):
-    #     self.windowsEffect.setAeroEffect(self.winId())
-    #     # logging.info(getSystemAccentColor().name())
-    #     # self.windowsEffect.setAcrylicEffect(self.winId(), gradientColor="271b43ff", enableShadow=False, animationId=0)
-    #     # self.windowsEffect.enableBlurBehindWindow(self.winId())
-
-    # def clearBackgroundEffect(self):
-    #     self.windowsEffect.removeBackgroundEffect(self.winId())
-
     def switchDesktop(self, next=True):
         screen_count = len(self.app.screens())
         if screen_count == 0:
@@ -343,6 +346,7 @@ class LyricsDisplay(QWidget):
             self.setHidden(False)
         self.screen_id = (self.screen_id + (1 if next else 0)) % screen_count
         self.toast(f"Moving to Screen {self.screen_id}")
+        self.position_mode = "custom"
         self.setPosition()
 
     def screenAdded(self):
@@ -352,6 +356,8 @@ class LyricsDisplay(QWidget):
         self.switchDesktop(next=False)
 
     def toast(self, text, duration=1000):
+        if not self._startup_ready and text != "Welcome to LyricBar":
+            return
         self._layoutToast(text)
         self.toaster.start(text, duration)
 
@@ -362,7 +368,34 @@ class LyricsDisplay(QWidget):
     def setPosition(self, use_saved=False):
         if self.screen_id >= len(self.app.screens()):
             self.switchDesktop(next=False)
-        screen = self.app.screens()[self.screen_id]
+        screens = self.app.screens()
+        if not screens:
+            return
+
+        screen_index = self.screen_id
+        saved_geometry = None
+        saved_mode = None
+        saved_screen = None
+
+        if use_saved:
+            qsettings = QSettings("LyricBar", self._WINDOW_SETTINGS_GROUP)
+            saved_geometry = qsettings.value(self._WINDOW_POSITION_KEY)
+            saved_mode = qsettings.value(self._WINDOW_POSITION_MODE_KEY, None)
+            saved_screen = qsettings.value(self._WINDOW_SCREEN_KEY, None)
+
+            if saved_mode in {"top", "bottom", "custom"}:
+                self.position_mode = saved_mode
+
+            try:
+                if saved_screen is not None:
+                    screen_index = int(saved_screen)
+            except (TypeError, ValueError):
+                screen_index = self.screen_id
+
+            if not (0 <= screen_index < len(screens)):
+                screen_index = self.screen_id
+
+        screen = screens[screen_index]
         screen_height = screen.geometry().height()
         screen_width = screen.geometry().width()
         screen_top = screen.geometry().top()
@@ -376,13 +409,27 @@ class LyricsDisplay(QWidget):
         if self._base_width is None:
             self._base_width = width
 
-        # Position based on mode
-        if self.position_mode == "top":
-            y = 0
-        else:
-            y = screen_height - height
+        if use_saved and saved_geometry is not None:
+            try:
+                saved_rect = saved_geometry.toRect() if hasattr(saved_geometry, "toRect") else saved_geometry
+            except Exception:
+                saved_rect = None
 
-        self.setGeometry(screen_left + x, screen_top + y, width, height)
+            if saved_rect is not None and not saved_rect.isNull():
+                self.setGeometry(saved_rect)
+            else:
+                self.setGeometry(screen_left + x, screen_top + (0 if self.position_mode == "top" else screen_height - height), width, height)
+        else:
+            # Position based on mode
+            if self.position_mode == "top":
+                y = 0
+            elif self.position_mode == "bottom":
+                y = screen_height - height
+            else:
+                saved_y = saved_geometry.y() if saved_geometry is not None and hasattr(saved_geometry, "y") else None
+                y = saved_y if saved_y is not None else 0
+
+            self.setGeometry(screen_left + x, screen_top + y, width, height)
 
         self.faux_taskbar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.faux_taskbar.setGeometry(0, 0, self.width(), self.height())
@@ -392,6 +439,9 @@ class LyricsDisplay(QWidget):
 
         # Update rounded corners when resizing
         self.applyRoundedCorners()
+
+        if not use_saved:
+            self.saveWindowSettings()
 
     def _layoutToast(self, text=""):
         """Size and position the toast to hug its own text -- a small pill
@@ -413,6 +463,9 @@ class LyricsDisplay(QWidget):
         # a tall toast fully hid whatever line was showing underneath it
         # regardless of how translucent the fill was.
         toast_height = max(20, int(self.height() * 0.58))
+
+        if not text and self.toaster.isVisible():
+            text = self.toaster.text.text()
 
         horizontal_padding = 22
         metrics = QFontMetrics(self.toaster.text.font())
@@ -456,6 +509,12 @@ class LyricsDisplay(QWidget):
 
         super().setHidden(True)
 
+    def saveWindowSettings(self):
+        qsettings = QSettings("LyricBar", self._WINDOW_SETTINGS_GROUP)
+        qsettings.setValue(self._WINDOW_POSITION_KEY, self.geometry())
+        qsettings.setValue(self._WINDOW_POSITION_MODE_KEY, self.position_mode)
+        qsettings.setValue(self._WINDOW_SCREEN_KEY, self.screen_id)
+
     def restoreFromIcon(self):
         """Restore the lyrics window from the floating icon"""
         if not self._is_minimized and not self.restore_icon.isVisible():
@@ -488,16 +547,13 @@ class LyricsDisplay(QWidget):
             self.timer.stop()
         if hasattr(self, 'track_change_timer'):
             self.track_change_timer.stop()
-        if hasattr(self, '_cursor_update_timer'):
-            self._cursor_update_timer.stop()
 
         # Clean up lyrics manager threads
         if hasattr(self, 'lyric_maintainer') and self.lyric_maintainer:
             if hasattr(self.lyric_maintainer, 'manager') and self.lyric_maintainer.manager:
                 self.lyric_maintainer.manager.cleanup()
 
-
-
+        self.saveWindowSettings()
         self.saveThemeSettings()
         super().closeEvent(event)
 
@@ -571,6 +627,10 @@ class LyricsDisplay(QWidget):
         self.label.updatePath()
         self.label.update()
 
+    def resizeEvent(self, event):
+        self.updateChildWidgets()
+        super().resizeEvent(event)
+
     def windowConfig(self):
         self.setAcceptDrops(False)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
@@ -593,6 +653,51 @@ class LyricsDisplay(QWidget):
         # Enable native rendering for better GPU utilization
         self.setAttribute(Qt.WA_NativeWindow, False)  # Use Qt's compositor for smoother blending
         self.setAttribute(Qt.WA_DontCreateNativeAncestors, True)  # Optimize widget hierarchy
+
+    def playStartupAnimation(self):
+        if self._startup_animation is not None:
+            return
+
+        final_geometry = QRect(self.geometry())
+        if final_geometry.isNull():
+            return
+
+        start_geometry = QRect(final_geometry)
+        start_width = max(240, int(final_geometry.width() * 0.9))
+        start_geometry.setWidth(start_width)
+        start_geometry.moveLeft(final_geometry.x() + (final_geometry.width() - start_width) // 2)
+        start_geometry.moveTop(final_geometry.y() - 14)
+
+        self.setWindowOpacity(0.0)
+        self.setGeometry(start_geometry)
+        self.applyRoundedCorners()
+
+        animation_group = QParallelAnimationGroup(self)
+
+        geometry_animation = QPropertyAnimation(self, b"geometry", self)
+        geometry_animation.setDuration(420)
+        geometry_animation.setStartValue(start_geometry)
+        geometry_animation.setEndValue(final_geometry)
+        geometry_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        opacity_animation = QPropertyAnimation(self, b"windowOpacity", self)
+        opacity_animation.setDuration(260)
+        opacity_animation.setStartValue(0.0)
+        opacity_animation.setEndValue(1.0)
+        opacity_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+
+        animation_group.addAnimation(geometry_animation)
+        animation_group.addAnimation(opacity_animation)
+        animation_group.finished.connect(self.finishStartupAnimation)
+        self._startup_animation = animation_group
+        animation_group.start()
+
+    def finishStartupAnimation(self):
+        self._startup_ready = True
+        self._startup_animation = None
+        if self._welcome_toast_pending:
+            self._welcome_toast_pending = False
+            QTimer.singleShot(60, lambda: self.toast("Welcome to LyricBar", 1000))
 
     def _faux_taskbar_alpha(self):
         """Backdrop tint behind the whole bar. The minimal themes use
@@ -808,7 +913,7 @@ class LyricsDisplay(QWidget):
                     logger.debug("New track callback received with no current track info")
 
             elif isinstance(value, str):
-                self.toast_signal.emit(value, 2000)
+                self.toast_signal.emit(value, 1000)
         except Exception:
             logger.exception("Error in maintainer_callback")
 
@@ -959,12 +1064,6 @@ class LyricsDisplay(QWidget):
             return
         self.setHidden(False)
 
-    def enterEvent(self, e):
-        pass
-
-    def leaveEvent(self, e):
-        pass
-
     def mouseDoubleClickEvent(self, e):
         """Handle double-click to copy lyrics"""
         if e.button() == Qt.MouseButton.LeftButton:
@@ -977,9 +1076,13 @@ class LyricsDisplay(QWidget):
         if e.button() == Qt.MouseButton.LeftButton:
             if self.minimize_button.geometry().contains(e.pos()):
                 return
-            self._is_dragging = True
-            self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
-            if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            modifiers = QApplication.keyboardModifiers()
+            if modifiers & Qt.KeyboardModifier.ControlModifier:
+                self._is_dragging = True
+                self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
+                e.accept()
+                return
+            if modifiers & Qt.KeyboardModifier.ShiftModifier:
                 self.switchDesktop()
         elif e.button() == Qt.MouseButton.RightButton:
             if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier == Qt.KeyboardModifier.ShiftModifier:
@@ -997,16 +1100,20 @@ class LyricsDisplay(QWidget):
 
     def mouseMoveEvent(self, e):
         if self._is_dragging and self._drag_pos is not None:
+            if not (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier):
+                self._is_dragging = False
+                self._drag_pos = None
+                return
             self.move(e.globalPos() - self._drag_pos)
             e.accept()
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
+            if self._is_dragging:
+                self.position_mode = "custom"
+                self.saveWindowSettings()
             self._is_dragging = False
             self._drag_pos = None
-
-    def updateCursorOnTimer(self):
-        pass
 
     def keyPressEvent(self, e):
         # Minimize the bar when Shift+Esc is pressed
@@ -1022,11 +1129,30 @@ class LyricsDisplay(QWidget):
     def wheelEvent(self, e):
         QModifiers = QApplication.keyboardModifiers()
         if QModifiers & Qt.KeyboardModifier.ShiftModifier == Qt.KeyboardModifier.ShiftModifier:
-            self.now_playing.global_offset += e.angleDelta().y()
+            new_offset = settings.global_offset + e.angleDelta().y()
+            settings.update_and_persist({
+                "Lyrics": {
+                    "Global Offset": new_offset,
+                    "Timing Offset": new_offset,
+                }
+            })
             self.toast("Global Offset:\n" + str(self.now_playing.global_offset))
         else:
             self.line_provider.track_offset += e.angleDelta().y()
             self.toast("Track Offset:\n" + str(self.line_provider.track_offset))
+
+        # Force an immediate refresh so the new offset is reflected right away
+        # instead of waiting for the next timer tick.
+        try:
+            if hasattr(self.line_provider, "lyrics") and getattr(self.line_provider, "lyrics", None):
+                self.line_provider.lyrics._cursor_index = -1
+            if hasattr(self.line_provider, "current_line"):
+                self.line_provider.current_line = None
+            self.displaying_line = None
+            self.displaying_begin_time = None
+            self.update_info()
+        except Exception:
+            logger.exception("Failed to refresh after offset change")
 
 
 class SystemTrayIcon(QSystemTrayIcon):
@@ -1034,6 +1160,7 @@ class SystemTrayIcon(QSystemTrayIcon):
     def __init__(self, icon, parent=None):
         QSystemTrayIcon.__init__(self, icon, parent)
         self.parent = parent
+        self._settings_dialog = None
         self.activated.connect(self.onActivated)
         self.createMenu()
 
@@ -1098,9 +1225,25 @@ class SystemTrayIcon(QSystemTrayIcon):
         """Open the settings dialog"""
         from .components.settingsdialog import SettingsDialog
 
+        if self._settings_dialog is not None:
+            if self._settings_dialog.isVisible():
+                self._settings_dialog.raise_()
+                self._settings_dialog.activateWindow()
+                return
+            self._settings_dialog.deleteLater()
+            self._settings_dialog = None
+
         dialog = SettingsDialog(parent=self.parent)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         dialog.settings_changed.connect(self.onSettingsChanged)
-        dialog.exec_()
+        dialog.finished.connect(self._clearSettingsDialog)
+        self._settings_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _clearSettingsDialog(self, *_):
+        self._settings_dialog = None
 
     def onActivated(self, reason):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
@@ -1145,7 +1288,10 @@ class SystemTrayIcon(QSystemTrayIcon):
         if changes.get("provider_changed"):
             self.parent.toast("Provider changed. Restart LyricBar to apply.")
 
-        if changes.get("timing_offset_changed"):
+        if changes.get("global_offset_changed"):
+            self.parent.toast(f"Global offset updated to {changes['global_offset']}ms")
+
+        if changes.get("timing_offset_changed") and not changes.get("global_offset_changed"):
             self.parent.toast(f"Lyrics timing updated to {changes['timing_offset']}ms")
 
     def toggleDebugConsole(self):

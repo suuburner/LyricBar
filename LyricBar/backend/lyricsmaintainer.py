@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class LyricsMaintainer():
     def __init__(self, now_playing, update_callback=None):
         super().__init__()
-        
+
         self.update_callback = update_callback
 
         self.providers = {}
@@ -29,49 +29,50 @@ class LyricsMaintainer():
         self.lyrics = None
         self.callback_mutex = QMutex()
         self.lyrics_mutex = QMutex()
-        
+        self._track_offset = 0
+
         self.current_line = None
         self._last_blocked_reason = None  # diagnostics: avoid log spam in `line`
-        
+
         self.stopped = False  # MUST be set BEFORE register_callback
-        
+
         self.now_playing = now_playing
         self.now_playing.register_callback(self.manager_callback)
-        
+
     def start(self):
         self.stopped = False
         self.now_playing.activate(self.manager_callback)
-    
+
     def pause(self):
         self.stopped = True
         self.lyrics = None
         self.manager.cleanup()
-    
+
     @property
     def line(self):
         # Never block UI thread here; keep previous line if writer holds lock briefly.
         if not self.lyrics_mutex.tryLock(0):
             return self.current_line
-            
+
         try:
             if not self.now_playing.has_lyrics:
                 self._log_blocked_once("waiting for a lyrics search to find/return a result for this track")
                 return None  # Hide bar when no lyrics found
-                
+
             if not self.lyrics:
                 # Inconsistent state: has_lyrics=True but lyrics=None/empty.
                 logger.warning("Inconsistent lyrics state detected - resetting has_lyrics to False")
                 self.now_playing.has_lyrics = False
                 return None  # Hide bar instead of showing sync symbol
-                
+
             if not self.now_playing.is_playing:
                 self._log_blocked_once("playback is paused")
                 return None
-                
+
             if not self.now_playing.current_begin_time:
                 self._log_blocked_once("waiting for a timeline/position update from the player")
                 return None
-                
+
             try:
                 l = self.lyrics.get_line_with_timestamp(self.now_playing.progress)
                 if l:
@@ -88,15 +89,15 @@ class LyricsMaintainer():
                         f"({len(self.lyrics.lines or [])} lines total)",
                         key="no_matching_line",
                     )
-                    
+
             except Exception as e:
                 logger.error(f"Error getting lyrics line: {e}")
                 # Reset lyrics if corrupted
                 self.lyrics = None
                 self.now_playing.has_lyrics = False
-            
+
             return None  # Hide bar instead of showing ♬ when no valid line found
-            
+
         finally:
             # Always unlock in finally block to prevent deadlocks
             self.lyrics_mutex.unlock()
@@ -117,7 +118,7 @@ class LyricsMaintainer():
         if key != self._last_blocked_reason:
             logger.debug(f"Lyric bar hidden: {message}")
             self._last_blocked_reason = key
-    
+
     def manager_callback(self, value):
         if self.stopped:
             return
@@ -129,13 +130,14 @@ class LyricsMaintainer():
             # lyrics_search_in_progress flag and needs to know when the result lands.
             self.lyrics = None
             self.current_line = None
+            self._track_offset = 0
             self.now_playing.has_lyrics = False
             self._last_blocked_reason = None  # let diagnostics re-report for the new track
             self.callback_mutex.unlock()
             return
         self.callback_mutex.unlock()
         return
-        
+
     def next_source(self):
         self.now_playing.has_lyrics = True
         if not self.now_playing.is_playing:
@@ -154,43 +156,41 @@ class LyricsMaintainer():
                 # Source not in list (shouldn't happen but just in case)
                 next_source = list(self.providers.keys())
         return next_source
-    
+
     def get_from_next_source(self):
         next_source = self.next_source()
         # Force refresh to skip cache when switching providers manually
         self.manager.get_lyrics(self.now_playing.current_track, lambda x: self.set_lyrics(*x, check_first=True), force_refresh=True, source=next_source)
-        
+
     def set_empty_lyrics(self):
         self.lyrics = Lyrics([])
         self.lyrics.track = self.now_playing.current_track
         self.now_playing.has_lyrics = True
         self.manager.save_lyrics(self.now_playing.current_track, self.lyrics)
-    
+
     @property
     def track_offset(self):
         if not self.lyrics_mutex.tryLock(100):
-            return 0
+            return self._track_offset
         try:
             if not self.now_playing.has_lyrics or not self.lyrics:
-                return 0
-            offset = self.lyrics.offset
-            return offset
+                return self._track_offset
+            return self.lyrics.track_offset
         finally:
             self.lyrics_mutex.unlock()
-    
+
     @track_offset.setter
     def track_offset(self, value):
         if not self.lyrics_mutex.tryLock(0):
             return
-        if not self.now_playing.has_lyrics or not self.lyrics:
-            self.lyrics_mutex.unlock()
-            return
-        self.lyrics.offset = value
-        logger.debug("Lyric offset updated: %s", self.lyrics.offset)
-        self.manager.save_lyrics(self.lyrics.track, self.lyrics)
+        self._track_offset = value
+        if self.now_playing.has_lyrics and self.lyrics:
+            self.lyrics.track_offset = value
+            logger.debug("Track offset updated: %s", self.lyrics.track_offset)
+            self.manager.save_lyrics(self.lyrics.track, self.lyrics)
         self.lyrics_mutex.unlock()
 
-    
+
     def set_lyrics(self, value, track=None, check_first=False):
         logger.debug(
             f"set_lyrics called: value={'Lyrics(%d lines, source=%s)' % (len(value.lines or []), value.source) if value else None}, "
@@ -205,13 +205,15 @@ class LyricsMaintainer():
                     f"now_playing.current_track is {self.now_playing.current_track!r}"
                 )
                 return
-        
+
         # Use timeout lock to prevent deadlocks
         if not self.lyrics_mutex.tryLock(500):  # Reduced timeout for faster response
             logger.warning("Could not acquire lyrics mutex in set_lyrics - skipping update")
             return
-            
+
         try:
+            if value:
+                value.track_offset = self._track_offset
             self.lyrics = value
             if not self.lyrics:
                 logger.debug("No lyrics to display for current track")

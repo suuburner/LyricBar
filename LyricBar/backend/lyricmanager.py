@@ -29,7 +29,7 @@ class LyricLine:
         self.end_timestamp = end_timestamp
         self.index = index
         self.begin_time = begin_time
-        
+
     def __lt__(self, other: "LyricLine"):
         return self.timestamp < other.timestamp
 
@@ -43,7 +43,7 @@ class LyricLine:
 
     def shift(self, milliseconds=0):
         self.timestamp += milliseconds
-        
+
     @classmethod
     def from_formatted_time(cls, time, text):
         if "." in time:
@@ -52,20 +52,21 @@ class LyricLine:
         else:
             minutes, seconds = re.match(r"\[(\d+):(\d+)\]", time).groups()
             return cls(int(minutes) * 60000 + int(seconds) * 1000, text)
-         
+
     def clean_text(self, text):
         text = text.strip()
         text = text.replace(u"е", "e")  # Cyrillic 'е' (U+0435) -> Latin 'e'
         text = text.replace(u"а", "a")  # Cyrillic 'а' (U+0430) -> Latin 'a'
         return text
-    
+
     def copy(self):
         return LyricLine(self.timestamp, self.text, self.end_timestamp, self.index)
-        
+
 @dataclass
 class Lyrics:
     lines: list = None
     offset: int = 0
+    track_offset: int = 0
     artist: str = None
     title: str = None
     track_id: str = None
@@ -74,7 +75,7 @@ class Lyrics:
     _cursor_index: int = -1
     # album: str = ""
     # length: int = 0
-    
+
     def get_line_with_timestamp(self, timestamp):
         if not self.lines:
             self._cursor_index = -1
@@ -83,7 +84,7 @@ class Lyrics:
         # Read live from settings (positive = earlier, negative = later) so a
         # timing-offset change from the settings dialog takes effect immediately,
         # instead of the value being frozen to whatever it was at import time.
-        adjusted_timestamp = timestamp + settings.lyrics_timing_offset
+        adjusted_timestamp = timestamp + settings.global_offset + self.track_offset
 
         # Cursor-based lookup avoids full scans every frame and keeps UI updates tight.
         idx = self._cursor_index
@@ -103,19 +104,19 @@ class Lyrics:
 
         self._cursor_index = idx
         return self.lines[idx] if idx >= 0 else None
-    
+
     def get_real_time(self, line):
         line = line.copy()
-        line.timestamp += self.offset
+        line.timestamp += self.offset - self.track_offset
         if line.end_timestamp != -1:
-            line.end_timestamp += self.offset
+            line.end_timestamp += self.offset - self.track_offset
         return line
-    
+
     @classmethod
     def from_json(cls, jsn, track: TrackInfo = None):
         lyrics = cls()
         items = []
-        
+
         for idx, line in enumerate(jsn["lyrics"]["lines"]):
             start_time = int(line["startTimeMs"])
             items.append(LyricLine(start_time, line["words"], index=idx))
@@ -126,7 +127,7 @@ class Lyrics:
             lyrics.source = jsn["source"]
         lyrics.track = track
         return lyrics
-    
+
     @classmethod
     def from_lrc(cls, lrc, track: TrackInfo = None):
         lyrics = cls()
@@ -164,13 +165,13 @@ class Lyrics:
             l.index = idx
         lyrics.track = track
         return lyrics
-    
+
     def to_json_file(self, jsn_file_path):
         jsn = {
             "lyrics": {
-                "syncType": "LINE_SYNCED", 
+                "syncType": "LINE_SYNCED",
                 "lines": [{"startTimeMs": l.timestamp, "words": l.text, "endTimeMs": "0"} for l in self.lines]
-            }, 
+            },
             "offset": self.offset
         }
         if self.source:
@@ -183,18 +184,18 @@ class LyricsProvider:
         pass
     def get_lyrics(self, track: TrackInfo) -> Lyrics:
         pass
-    
+
 class FromSpotify(LyricsProvider):
     def __init__(self, sp_dc):
         self._pvd = None
         self.sp_dc = sp_dc
-        
+
     @property
     def pvd(self):
         if self._pvd is None:
             self._pvd = LyricsSpotify(self.sp_dc)
         return self._pvd
-    
+
     def get_lyrics(self, track: TrackInfo) -> Lyrics:
         if track.id is None:
             return None
@@ -206,11 +207,11 @@ class FromSpotify(LyricsProvider):
         if (lyrics is None) or ("lyrics" not in lyrics) or ("syncType" not in lyrics["lyrics"]) or (lyrics["lyrics"]["syncType"] != "LINE_SYNCED"):
             return None
         return Lyrics.from_json(lyrics, track)
-        
+
 class FromThirdParty(LyricsProvider):
     def __init__(self, third_parties=["Lrclib", "NetEase", "Musixmatch"]):
         self.third_parties = third_parties
-    
+
     def get_lyrics(self, track: TrackInfo) -> Lyrics:
         lrc = None
         try:
@@ -250,10 +251,10 @@ class LyricsThread(QThread):
             self.callback(payload)
         except Exception:
             logger.exception("Lyrics callback failed")
-        
+
     def cancel(self):
         self.cancelled = True
-        
+
     def gracefully_out(self):
         # Just marks intent to stop; NOT safe to touch self.holder here since
         # this runs on the worker thread, inside run() itself. Removing self
@@ -354,7 +355,7 @@ class LyricsThread(QThread):
                 "No lyrics found for %s - %s (tried: %s)",
                 self.track.artist, self.track.title, ", ".join(tried) or "no providers configured",
             )
-        
+
         if self.cancelled:
             logger.debug("LyricsThread cancelled for %s - %s, before emit", self.track.artist, self.track.title)
             self.gracefully_out()
@@ -367,8 +368,8 @@ class LyricsThread(QThread):
         if self.callback is not None:
             self.result_ready.emit((ret, self.track))
         self.gracefully_out()
-        
-        
+
+
 class LyricsManager():
     def __init__(self, cache_dir="lyrics", providers=[]):
         self.cache_dir = str(Path(cache_dir).expanduser())
@@ -376,25 +377,25 @@ class LyricsManager():
             self.cache_dir = str((Path.cwd() / self.cache_dir).resolve())
         self.providers = providers
         self.getter = None
-        
+
         self.lyrics_gripper = set()
         self.lyrics_track = None
         self.last_search_track = None
         self.last_search_time = 0
-        
+
         self.gripper_lock = QMutex()
-    
+
     def get_lyrics(self, track: TrackInfo, callback: callable = None, force_refresh=False, source=None):
         # print("GETTING LYRICS FOR ", str(track), "FROM ", source)
-        
+
         # Prevent duplicate searches within 500ms for same track
         import time
         current_time = time.time() * 1000
-        if (not force_refresh and 
-            self.last_search_track == track and 
+        if (not force_refresh and
+            self.last_search_track == track and
             current_time - self.last_search_time < 500):
             return
-        
+
         found = False
         for lg in self.lyrics_gripper:
             if lg.track == track and lg.source == source and not lg.cancelled:
@@ -407,17 +408,17 @@ class LyricsManager():
                 lg.cancel()
         if found:
             return
-        
+
         # Update search tracking
         self.last_search_track = track
         self.last_search_time = current_time
-        
+
         lg = LyricsThread(self, track, self.lyrics_gripper, callback, self.gripper_lock, force_refresh, source)
         self.lyrics_gripper.add(lg)
         # lg.start_signal.emit()
         lg.start()
         # print("command sent")
-    
+
     def cleanup(self):
         """Cancel all running threads and clean up resources"""
         self.gripper_lock.lock()
@@ -440,7 +441,7 @@ class LyricsManager():
 
         self.last_search_track = None
         self.last_search_time = 0
-        
+
     def save_lyrics(self, track: TrackInfo, lyrics: Lyrics):
         cache_dir = Path(self.cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)

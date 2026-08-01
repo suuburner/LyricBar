@@ -1,6 +1,6 @@
 """Minimal settings dialog for LyricBar."""
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QComboBox,
@@ -16,10 +16,52 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QPushButton,
+    QListView,
 )
 
 from LyricBar import themes
 from LyricBar.config import resource_path, settings
+
+
+class SettingsComboBox(QComboBox):
+    def showPopup(self):
+        super().showPopup()
+        QTimer.singleShot(0, self._raise_popup)
+
+    def _raise_popup(self):
+        popup = self.view().window()
+        if popup is None:
+            return
+        popup.setStyleSheet(
+            """
+            QFrame {
+                background: #17171d;
+                border: 1px solid #343442;
+                border-radius: 8px;
+            }
+            QListView {
+                background: #17171d;
+                color: #f8f8fa;
+                border: none;
+                outline: 0;
+                selection-background-color: #4a4a5c;
+                selection-color: #ffffff;
+            }
+            QListView::item {
+                min-height: 26px;
+                padding: 4px 10px;
+            }
+            QListView::item:selected {
+                background: #4a4a5c;
+                color: #ffffff;
+            }
+            """
+        )
+        popup.setAutoFillBackground(True)
+        popup.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        popup.setWindowFlag(Qt.WindowType.ToolTip, True)
+        popup.raise_()
+        popup.activateWindow()
 
 
 class SettingsDialog(QDialog):
@@ -32,18 +74,21 @@ class SettingsDialog(QDialog):
         # the same file's schema, and they'd already drifted apart. Reading
         # from the shared `settings` singleton means there's exactly one
         # place that understands settings.yaml's shape.
+        self._fixed_dialog_size = None
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle("LyricBar Settings")
         self.setWindowIcon(QIcon(resource_path("resources/icon.ico")))
-        self.setMinimumWidth(420)
-        self.setMaximumWidth(520)
+        self.setWindowFlag(Qt.WindowType.Tool, True)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setObjectName("settingsDialog")
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 12, 14, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(18, 16, 18, 16)
+        root.setSpacing(14)
+
+        self.setFontFamilyStack()
 
         title = QLabel("Settings")
         title.setObjectName("sectionTitle")
@@ -52,10 +97,11 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignLeft)
         form.setFormAlignment(Qt.AlignTop)
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(12)
 
-        self.provider_combo = QComboBox()
+        self.provider_combo = SettingsComboBox()
+        self._style_combo_box(self.provider_combo)
         self.provider_combo.addItems(["System", "Spicetify"])
         self.provider_combo.setCurrentText(settings.playing_info_provider)
         form.addRow("Provider", self.provider_combo)
@@ -65,14 +111,15 @@ class SettingsDialog(QDialog):
         self.spicetify_port.setValue(int(settings.spicetify_port))
         form.addRow("Spicetify port", self.spicetify_port)
 
-        self.timing_offset = QSpinBox()
-        self.timing_offset.setRange(-5000, 5000)
-        self.timing_offset.setSingleStep(50)
-        self.timing_offset.setSuffix(" ms")
-        self.timing_offset.setValue(int(settings.lyrics_timing_offset))
-        form.addRow("Timing offset", self.timing_offset)
+        self.global_offset = QSpinBox()
+        self.global_offset.setRange(-5000, 5000)
+        self.global_offset.setSingleStep(50)
+        self.global_offset.setSuffix(" ms")
+        self.global_offset.setValue(int(settings.global_offset))
+        form.addRow("Global offset", self.global_offset)
 
-        self.theme_combo = QComboBox()
+        self.theme_combo = SettingsComboBox()
+        self._style_combo_box(self.theme_combo)
         theme_names = [name for name in themes.MINIMAL_THEME_NAMES if name in themes.STYLES]
         self.theme_combo.addItems(theme_names)
         if settings.default_theme in theme_names:
@@ -118,7 +165,7 @@ class SettingsDialog(QDialog):
 
         root.addLayout(form)
 
-        hint = QLabel("Provider changes need a restart. Theme and timing apply immediately.")
+        hint = QLabel("Provider changes need a restart. Theme and offsets apply immediately.")
         hint.setObjectName("hintText")
         hint.setWordWrap(True)
         root.addWidget(hint)
@@ -128,53 +175,132 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
 
+        self.setSizeGripEnabled(False)
+
         self.setStyleSheet(
             """
             QDialog#settingsDialog {
                 background: #101014;
                 color: #e8e8e8;
-                font-family: "Segoe UI", "Arial";
-                font-size: 10pt;
+                font-family: "JetBrains Mono", "Segoe UI", "Consolas", monospace;
+                font-size: 10.5pt;
             }
             QLabel#sectionTitle {
-                font-size: 13pt;
-                font-weight: 600;
-                color: #ffffff;
+                font-size: 14pt;
+                font-weight: 700;
+                color: #f7f7f7;
+                padding-bottom: 2px;
             }
             QLabel#hintText {
-                color: #a0a0a0;
+                color: #b6b6bf;
+                padding-top: 2px;
+            }
+            QFormLayout QLabel {
+                color: #f0f0f5;
+                padding-right: 4px;
             }
             QLineEdit, QComboBox, QSpinBox {
-                background: #1a1a1f;
-                border: 1px solid #2d2d36;
-                border-radius: 6px;
-                padding: 6px;
-                color: #f0f0f0;
+                background: #17171d;
+                border: 1px solid #2f2f39;
+                border-radius: 8px;
+                padding: 8px 10px;
+                color: #f5f5f7;
+                selection-background-color: #4a4a5c;
+                selection-color: #ffffff;
             }
             QComboBox QAbstractItemView {
-                background: #16161b;
-                color: #f0f0f0;
-                selection-background-color: #3a3a46;
-                selection-color: #ffffff;
+                background: #17171d;
+                color: #f8f8fa;
+                border: 1px solid #343442;
+                border-radius: 8px;
+                padding: 4px;
                 outline: 0;
+                selection-background-color: #4a4a5c;
+                selection-color: #ffffff;
+            }
+            QComboBox QAbstractItemView::item {
+                min-height: 26px;
+                padding: 4px 10px;
             }
             QComboBox::drop-down {
                 border: 0;
+                width: 18px;
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+            }
+            QComboBox::down-arrow {
                 width: 0;
+                height: 0;
             }
             QDialogButtonBox QPushButton {
-                min-width: 84px;
-                border-radius: 6px;
-                padding: 6px 12px;
-                background: #2a2a33;
-                color: #f0f0f0;
-                border: 1px solid #3a3a46;
+                min-width: 88px;
+                border-radius: 8px;
+                padding: 7px 14px;
+                background: #24242d;
+                color: #f4f4f6;
+                border: 1px solid #353545;
             }
             QDialogButtonBox QPushButton:hover {
-                background: #363642;
+                background: #30303b;
             }
             """
         )
+
+        # Lock the dialog to the final layout size so it cannot be resized.
+        self.adjustSize()
+        self._fixed_dialog_size = self.sizeHint()
+        self.setMinimumSize(self._fixed_dialog_size)
+        self.setMaximumSize(self._fixed_dialog_size)
+        self.resize(self._fixed_dialog_size)
+
+    def setFontFamilyStack(self):
+        from PyQt5.QtGui import QFont, QFontDatabase
+
+        font_candidates = ["JetBrains Mono", "Segoe UI", "Consolas", "Arial"]
+        available_fonts = set(QFontDatabase().families())
+        family = next((name for name in font_candidates if name in available_fonts), "Segoe UI")
+        font = QFont(family)
+        font.setPointSizeF(10.5)
+        self.setFont(font)
+
+    def _style_combo_box(self, combo_box):
+        combo_box.setView(QListView(combo_box))
+        combo_box.view().setUniformItemSizes(True)
+        combo_box.setMaxVisibleItems(10)
+        combo_box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        combo_box.setMinimumWidth(180)
+        combo_box.view().setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        combo_box.view().viewport().setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        combo_box.view().setStyleSheet(
+            """
+            QListView {
+                background: #17171d;
+                color: #f8f8fa;
+                border: none;
+                outline: 0;
+            }
+            QListView::viewport {
+                background: #17171d;
+                border: none;
+            }
+            QListView::item {
+                min-height: 26px;
+                padding: 4px 10px;
+            }
+            QListView::item:selected {
+                background: #4a4a5c;
+                color: #ffffff;
+            }
+            """
+        )
+
+    def resizeEvent(self, event):
+        if self._fixed_dialog_size is not None and event.size() != self._fixed_dialog_size:
+            self.setMinimumSize(self._fixed_dialog_size)
+            self.setMaximumSize(self._fixed_dialog_size)
+            if self.size() != self._fixed_dialog_size:
+                self.resize(self._fixed_dialog_size)
+        super().resizeEvent(event)
 
     def _on_progress_toggled(self, checked):
         if checked and not self.border_checkbox.isChecked():
@@ -243,8 +369,8 @@ class SettingsDialog(QDialog):
         try:
             current_provider = settings.playing_info_provider
             new_provider = self.provider_combo.currentText()
-            current_offset = settings.lyrics_timing_offset
-            new_offset = self.timing_offset.value()
+            current_offset = settings.global_offset
+            new_offset = self.global_offset.value()
             current_theme = settings.default_theme
             new_theme = self.theme_combo.currentText()
             current_progress = settings.show_progress_bar
@@ -268,7 +394,10 @@ class SettingsDialog(QDialog):
                     "Spicetify Port": self.spicetify_port.value(),
                     "Tracking App": tracking_apps,
                 },
-                "Lyrics": {"Timing Offset": new_offset},
+                "Lyrics": {
+                    "Global Offset": new_offset,
+                    "Timing Offset": new_offset,
+                },
                 "Themes": {"Default": new_theme},
                 "Display": {
                     "Progress Bar": new_progress,
@@ -280,8 +409,9 @@ class SettingsDialog(QDialog):
             changes = {
                 "provider": new_provider,
                 "provider_changed": new_provider != current_provider,
-                "timing_offset": new_offset,
+                "global_offset": new_offset,
                 "timing_offset_changed": new_offset != current_offset,
+                "global_offset_changed": new_offset != current_offset,
                 "theme": new_theme,
                 "theme_changed": new_theme != current_theme,
                 "progress_bar": new_progress,

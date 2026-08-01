@@ -34,7 +34,7 @@ class NowPlaying(QObject):
 
     def sync(self):
         pass
-    
+
     def register_callback(self, callback):
         self.registered_callbacks.add(callback)
         if not self.started:
@@ -43,7 +43,7 @@ class NowPlaying(QObject):
             callback(PlayingStatusTrigger.NEW_TRACK)
         else:
             callback(PlayingStatusTrigger.PAUSE)
-            
+
     def activate(self, callback=None):
         if callback is not None:
             if self.playing_info is not None and self.playing_info.is_playing:
@@ -56,24 +56,24 @@ class NowPlaying(QObject):
                 callback(PlayingStatusTrigger.NEW_TRACK)
             else:
                 callback(PlayingStatusTrigger.PAUSE)
-    
+
     def unregister_callback(self, callback):
         self.registered_callbacks.remove(callback)
-        
+
     def update_callback(self, trigger):
         # Create a copy of the set to avoid "Set changed size during iteration" error
         for callback in list(self.registered_callbacks):
             callback(trigger)
-            
+
     @property
     def global_offset(self):
-        return self._global_offset
-    
+        return settings.global_offset
+
     @global_offset.setter
     def global_offset(self, value):
         logger.debug("Global offset updated: %s", value)
-        self._global_offset = value
-            
+        settings.global_offset = value
+
     @property
     def progress(self):
         if not self.is_playing:
@@ -81,7 +81,7 @@ class NowPlaying(QObject):
         if not self.current_begin_time:
             return -1
         return (datetime.now().timestamp() * 1000 - self.current_begin_time)
-    
+
     @property
     def percent(self):
         if not self.is_playing:
@@ -97,7 +97,7 @@ class NowPlaying(QObject):
     @property
     def current_track(self):
         return self.playing_info.current_track if self.playing_info is not None else None
-    
+
     @property
     def current_track_id(self):
         return (
@@ -132,11 +132,7 @@ class NowPlaying(QObject):
 
     @property
     def current_begin_time(self):
-        return (
-            self.playing_info.current_begin_time + self.global_offset
-            if self.playing_info is not None
-            else None
-        )
+        return self.playing_info.current_begin_time if self.playing_info is not None else None
 
     @property
     def last_updated_time(self):
