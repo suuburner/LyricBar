@@ -1,17 +1,26 @@
-# Virtual environments
 .venv/
 .venv*/
 venv/
 venv*/
+
 lyrics/
 
-# Build artifacts
+.cache
+.cache-*
+
+test*
 build/
 dist/
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *.spec.user
 
-# temporary files
+.vscode/
+.vscode-upload.json
+.idea/
 
-**/__pycache__/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+*.log

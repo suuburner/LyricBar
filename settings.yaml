@@ -1,6 +1,3 @@
-Apperance:
-  Leftout Width: 600
-  Taskbar Height: 40
 Lyrics:
   Folder: lyrics
   Global Offset: 0
@@ -23,9 +20,6 @@ Playing Info:
   - Spotube
   - msedgewebview2.exe
   - com.lyra.music
-STT:
-  Model Path: ''
-  Tracking Input: ''
 Themes:
   Default: Catppuccin Mocha
   Folder: themes
